@@ -103,7 +103,6 @@ int computeCursorXPos(int cursor, int hexOrAscii)
 
 void initCurses(void)
 {
-  struct sigaction sa;
   initscr();
 
 #ifdef HAVE_COLORS
