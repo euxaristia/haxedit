@@ -37,13 +37,13 @@ final class InputParserTests: XCTestCase {
         XCTAssertEqual(parser.readKey(), .functionKey(1))
     }
 
-    func testParseCSIu() {
-        // Ctrl+Shift+C: ESC [ 99 ; 6 u
+    func testParseCSIuShiftA() {
+        // Shift+A: ESC [ 97 ; 2 u  (assuming terminal sends lowercase 'a'=97 and modifier 2=Shift)
         mockTerminal.queueInput([
-            0x1B, UInt8(ascii: "["), UInt8(ascii: "9"), UInt8(ascii: "9"), UInt8(ascii: ";"),
-            UInt8(ascii: "6"), UInt8(ascii: "u"),
+            0x1B, UInt8(ascii: "["), UInt8(ascii: "9"), UInt8(ascii: "7"), UInt8(ascii: ";"),
+            UInt8(ascii: "2"), UInt8(ascii: "u"),
         ])
-        XCTAssertEqual(parser.readKey(), .ctrlShift(UInt8(ascii: "c")))
+        XCTAssertEqual(parser.readKey(), .char(UInt8(ascii: "A")))
     }
 
     // MARK: - Mouse Tracking Tests

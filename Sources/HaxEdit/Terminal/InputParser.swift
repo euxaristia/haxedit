@@ -181,7 +181,7 @@ final class InputParser {
         case 1:  // No modifiers
             return .char(c)
         case 2:  // Shift
-            return .char(c)
+            return .char(applyShift(c))
         case 3:  // Alt
             return .alt(c)
         case 5:  // Ctrl
@@ -192,6 +192,36 @@ final class InputParser {
             return .ctrlAlt(toControlCode(c))
         default:
             return .char(c)
+        }
+    }
+
+    private func applyShift(_ c: UInt8) -> UInt8 {
+        switch c {
+        case UInt8(ascii: "a")...UInt8(ascii: "z"):
+            return c - 32
+        case UInt8(ascii: "1"): return UInt8(ascii: "!")
+        case UInt8(ascii: "2"): return UInt8(ascii: "@")
+        case UInt8(ascii: "3"): return UInt8(ascii: "#")
+        case UInt8(ascii: "4"): return UInt8(ascii: "$")
+        case UInt8(ascii: "5"): return UInt8(ascii: "%")
+        case UInt8(ascii: "6"): return UInt8(ascii: "^")
+        case UInt8(ascii: "7"): return UInt8(ascii: "&")
+        case UInt8(ascii: "8"): return UInt8(ascii: "*")
+        case UInt8(ascii: "9"): return UInt8(ascii: "(")
+        case UInt8(ascii: "0"): return UInt8(ascii: ")")
+        case UInt8(ascii: "-"): return UInt8(ascii: "_")
+        case UInt8(ascii: "="): return UInt8(ascii: "+")
+        case UInt8(ascii: "["): return UInt8(ascii: "{")
+        case UInt8(ascii: "]"): return UInt8(ascii: "}")
+        case UInt8(ascii: "\\"): return UInt8(ascii: "|")
+        case UInt8(ascii: ";"): return UInt8(ascii: ":")
+        case UInt8(ascii: "'"): return UInt8(ascii: "\"")
+        case UInt8(ascii: ","): return UInt8(ascii: "<")
+        case UInt8(ascii: "."): return UInt8(ascii: ">")
+        case UInt8(ascii: "/"): return UInt8(ascii: "?")
+        case UInt8(ascii: "`"): return UInt8(ascii: "~")
+        default:
+            return c
         }
     }
 
