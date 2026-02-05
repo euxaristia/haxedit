@@ -1,7 +1,7 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
-BUILD_DIR = .build/release
+BUILD_DIR = $(shell swift build -c release --show-bin-path)
 BINARY = $(BUILD_DIR)/HaxEdit
 SOURCES = $(shell find Sources -name "*.swift")
 
@@ -33,6 +33,10 @@ local-uninstall:
 	rm -f $(HOME)/.local/share/man/man1/haxedit.1
 
 $(BINARY): $(SOURCES) Package.swift
+	@if [ "$$(id -u)" = "0" ]; then \
+		echo "Error: Cannot build as root. Please run 'make' as a regular user first."; \
+		exit 1; \
+	fi
 	swift build -c release --static-swift-stdlib
 
 clean:
