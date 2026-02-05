@@ -31,8 +31,12 @@ struct ANSIRenderer {
     static let disableMouseTracking = "\u{1b}[?1006l\u{1b}[?1002l\u{1b}[?1000l"
 
     // MARK: - Keyboard Protocols
-    static let enableKittyKeyboard = "\u{1b}[>1u"
-    static let disableKittyKeyboard = "\u{1b}[<u"
+    // Kitty keyboard protocol: flag 9 = bit 0 (disambiguate) + bit 3 (report all keys as escape codes)
+    // With flag 9: Both Ctrl+C and Ctrl+Shift+C come as CSI u sequences with proper modifiers
+    // - Ctrl+C: ESC [ 99 ; 5 u (modifier 5 = Ctrl)
+    // - Ctrl+Shift+C: ESC [ 99 ; 6 u (modifier 6 = Ctrl+Shift)
+    static let enableKittyKeyboard = "\u{1b}[>9u\u{1b}[>4;2m"
+    static let disableKittyKeyboard = "\u{1b}[<u\u{1b}[>4;0m"
 
     // MARK: - Text Attributes
     static let resetAttributes = "\u{1b}[0m"
@@ -82,7 +86,7 @@ struct ANSIRenderer {
             seq += ";1;34;43"
         } else if isOtherCursor {
             // Corresponding position in other pane: underlined or dim
-            seq += ";4" // Underline
+            seq += ";4"  // Underline
         } else {
             if byteAttr.contains(.modified) {
                 seq += ";1"  // bold
@@ -90,15 +94,15 @@ struct ANSIRenderer {
             if showMarked && byteAttr.contains(.marked) {
                 seq += ";7"  // reverse
             } else if isOtherMarked {
-                seq += ";2" // Dim for "lightly shade"
+                seq += ";2"  // Dim for "lightly shade"
             }
-            
+
             if colored && !(showMarked && byteAttr.contains(.marked)) && !isOtherMarked {
                 switch byteColor {
-                case .null:     seq += ";31"  // red
-                case .control:  seq += ";32"  // green
+                case .null: seq += ";31"  // red
+                case .control: seq += ";32"  // green
                 case .extended: seq += ";34"  // blue
-                case .normal:   break
+                case .normal: break
                 }
             }
         }
@@ -111,7 +115,7 @@ struct ANSIRenderer {
     static func hexByte(_ byte: UInt8) -> String {
         let hexChars: [Character] = [
             "0", "1", "2", "3", "4", "5", "6", "7",
-            "8", "9", "A", "B", "C", "D", "E", "F"
+            "8", "9", "A", "B", "C", "D", "E", "F",
         ]
         return String(hexChars[Int(byte >> 4)]) + String(hexChars[Int(byte & 0x0F)])
     }
