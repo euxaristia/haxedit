@@ -71,21 +71,29 @@ struct ANSIRenderer {
         byteColor: ByteColor,
         isCursor: Bool,
         colored: Bool,
-        showMarked: Bool = true
+        showMarked: Bool = true,
+        isOtherCursor: Bool = false,
+        isOtherMarked: Bool = false
     ) -> String {
         var seq = "\u{1b}[0"  // start with reset
 
         if isCursor {
-            // Cursor position: bold blue on yellow
+            // Active Cursor position: bold blue on yellow
             seq += ";1;34;43"
+        } else if isOtherCursor {
+            // Corresponding position in other pane: underlined or dim
+            seq += ";4" // Underline
         } else {
             if byteAttr.contains(.modified) {
                 seq += ";1"  // bold
             }
             if showMarked && byteAttr.contains(.marked) {
                 seq += ";7"  // reverse
+            } else if isOtherMarked {
+                seq += ";2" // Dim for "lightly shade"
             }
-            if colored && !(showMarked && byteAttr.contains(.marked)) {
+            
+            if colored && !(showMarked && byteAttr.contains(.marked)) && !isOtherMarked {
                 switch byteColor {
                 case .null:     seq += ";31"  // red
                 case .control:  seq += ";32"  // green
