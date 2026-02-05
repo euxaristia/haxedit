@@ -3,6 +3,7 @@ import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
+import Foundation
 
 // MARK: - Terminal Protocol
 
@@ -15,6 +16,7 @@ protocol TerminalProtocol {
     func writeString(_ string: String)
     func flush()
     func suspend()
+    func setSystemClipboard(_ string: String)
 }
 
 struct TerminalSize: Equatable {
@@ -222,5 +224,11 @@ final class Terminal: TerminalProtocol {
         // After resume:
         enableRawMode()
         refreshSize()
+    }
+
+    func setSystemClipboard(_ string: String) {
+        let base64Data = string.data(using: .utf8)?.base64EncodedString() ?? ""
+        writeString("\u{1b}]52;c;\(base64Data)\u{07}")
+        flush()
     }
 }

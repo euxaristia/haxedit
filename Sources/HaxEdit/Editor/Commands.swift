@@ -3,6 +3,7 @@ import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
+import Foundation
 
 // MARK: - Commands
 // Executes editor actions. Port of interact.c command functions.
@@ -144,6 +145,9 @@ struct Commands {
 
         case .copyRegion:
             copyRegion(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+
+        case .copyToSystemClipboard:
+            copyToSystemClipboard(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .yank:
             yank(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
@@ -474,29 +478,47 @@ struct Commands {
             }
         }
 
-        // Read from file
-        let result = state.fileHandle.readPage(at: state.selection.min, size: size)
-        var copyData = result.data
-
-        // Overlay edits
-        state.edits.forEachPage { page in
-            if state.selection.min < page.base + Int64(page.size) && page.base <= state.selection.max {
-                let overlapStart = max(page.base, state.selection.min)
-                let overlapEnd = min(page.base + Int64(page.size), state.selection.max + 1)
-                let count = min(Int(overlapEnd - overlapStart), page.size)
-                for i in 0..<count {
-                    let dstIdx = Int(overlapStart - state.selection.min)
-                    let srcIdx = Int(overlapStart - page.base)
-                    if dstIdx + i < copyData.count && srcIdx + i < page.vals.count {
-                        copyData[dstIdx + i] = page.vals[srcIdx + i]
-                    }
-                }
-            }
-        }
-
+        let copyData = state.getSelectedData()
         state.clipboard.set(copyData)
         state.viewport.unmarkAll()
         state.selection.clear()
+    }
+
+    // MARK: - Copy to System Clipboard
+
+    static func copyToSystemClipboard(
+        state: inout EditorState,
+        terminal: TerminalProtocol,
+        inputParser: InputParser,
+        termSize: TerminalSize
+    ) {
+        guard state.selection.isSet else {
+            Prompt.displayMessageAndWaitForKey(
+                "Nothing to copy", state: state, terminal: terminal,
+                inputParser: inputParser, termSize: termSize
+            )
+            return
+        }
+
+        let data = state.getSelectedData()
+        guard !data.isEmpty else { return }
+
+        let stringToCopy: String
+        if state.editPane.isHex {
+            // Format as hex string: "48 65 6c 6c 6f"
+            stringToCopy = data.map { String(format: "%02x", $0) }.joined(separator: " ")
+        } else {
+            // Format as ASCII string
+            stringToCopy = String(decoding: data, as: UTF8.self)
+        }
+
+        terminal.setSystemClipboard(stringToCopy)
+        
+        // Don't unmark selection for system copy, as it's often used repeatedly
+        Prompt.displayMessageAndWaitForKey(
+            "Copied to system clipboard", state: state, terminal: terminal,
+            inputParser: inputParser, termSize: termSize
+        )
     }
 
     // MARK: - Yank (Paste)
@@ -708,6 +730,7 @@ struct Commands {
         Mark/Copy:
           Ctrl+Space / F9        Set mark
           Ctrl+D / Alt+W / F7    Copy region
+          Ctrl+Shift+C           Copy to system clipboard
           Ctrl+Y / F8            Paste
           Alt+Y / F11            Paste to file
           F12 / Alt+I            Fill with string

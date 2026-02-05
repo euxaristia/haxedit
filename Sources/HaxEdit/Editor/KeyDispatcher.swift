@@ -97,6 +97,10 @@ struct KeyDispatcher {
         case .ctrl(0x1A): /* Ctrl+Z */      return .suspend
         case .ctrl(0x1F): /* Ctrl+_ */      return .undo
 
+        // Ctrl+Shift combos
+        case .ctrlShift(UInt8(ascii: "C")),
+             .ctrlShift(UInt8(ascii: "c")): return .copyToSystemClipboard
+
         // Tab
         case .tab:                          return .toggleHexAscii
 
