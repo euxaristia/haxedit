@@ -711,7 +711,7 @@ struct Commands {
 
         Editing:
           Tab / Ctrl+T           Toggle hex/ascii
-          Ctrl+Q                 Quoted insert
+          Alt+Q                  Quoted insert
           Backspace              Delete backward
           Ctrl+U / Ctrl+_        Undo all
 
@@ -721,7 +721,7 @@ struct Commands {
           Ctrl+G / F4 / Enter    Goto position
           Alt+T                  Truncate
           Ctrl+X / F10           Save & quit
-          Ctrl+C                 Quit (no save)
+          Ctrl+Q                 Quit (no save)
 
         Search:
           / / Ctrl+S             Search forward
@@ -730,7 +730,7 @@ struct Commands {
         Mark/Copy:
           Ctrl+Space / F9        Set mark
           Ctrl+D / Alt+W / F7    Copy region
-          Ctrl+Shift+C           Copy to system clipboard
+          Ctrl+C                 Copy to system clipboard
           Ctrl+Y / F8            Paste
           Alt+Y / F11            Paste to file
           F12 / Alt+I            Fill with string

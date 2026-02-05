@@ -3,6 +3,7 @@ import Glibc
 #elseif canImport(Darwin)
 import Darwin
 #endif
+import Foundation
 
 // MARK: - Main Entry Point
 
@@ -34,7 +35,6 @@ args.removeFirst()
 var fileName: String? = nil
 var forceReadOnly = false
 var requestedLineLength: Int = 0
-var debugKeys = false
 
 var i = 0
 while i < args.count {
@@ -42,8 +42,6 @@ while i < args.count {
 
     if arg == "-s" || arg == "--sector" {
         state.mode = .bySector
-    } else if arg == "--debug-keys" {
-        debugKeys = true
     } else if arg == "-r" || arg == "--readonly" {
         forceReadOnly = true
     } else if arg == "-m" || arg == "--maximize" {
@@ -97,6 +95,11 @@ if fileName != nil && i + 1 < args.count {
 state.lineLength = requestedLineLength
 
 // MARK: - Initialize Terminal
+
+signal(SIGINT) { _ in
+    cleanup()
+    exit(0)
+}
 
 do {
     terminal = try Terminal()
@@ -169,13 +172,6 @@ while running {
     // Read key
     let key = inputParser.readKey()
     state.saveOldState()
-
-    if debugKeys && key != .none && key != .resize {
-        Prompt.displayMessageAndWaitForKey(
-            "Key: \(key)", state: state, terminal: terminal,
-            inputParser: inputParser, termSize: terminal.size
-        )
-    }
 
     // Handle resize
     if key == .resize || terminal.checkResize() {
