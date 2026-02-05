@@ -4,7 +4,7 @@ BINDIR ?= $(PREFIX)/bin
 all: build
 
 build:
-	swift build -c release
+	swift build -c release --static-swift-stdlib
 
 test:
 	swift test
