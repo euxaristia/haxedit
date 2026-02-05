@@ -173,14 +173,6 @@ struct Commands {
             copyToSystemClipboard(
                 state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
-        case .smartCopyOrQuit:
-            if state.selection.isSet {
-                copyToSystemClipboard(
-                    state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
-            } else {
-                return false  // Quit
-            }
-
         case .yank:
             yank(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
@@ -768,7 +760,7 @@ struct Commands {
               Ctrl+G / F4 / Enter    Goto position
               Alt+T                  Truncate
               Ctrl+X / F10           Save & quit
-              Ctrl+C                 Quit (Copy if selection)
+              Ctrl+C                 Quit
 
             Search:
               / / Ctrl+S             Search forward

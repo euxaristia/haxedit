@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import HaxEdit
 
 final class InputParserTests: XCTestCase {
@@ -20,7 +21,7 @@ final class InputParserTests: XCTestCase {
     }
 
     func testParseCtrlKey() {
-        mockTerminal.queueInput([0x01]) // Ctrl+A
+        mockTerminal.queueInput([0x01])  // Ctrl+A
         XCTAssertEqual(parser.readKey(), .ctrl(0x01))
     }
 
@@ -38,7 +39,10 @@ final class InputParserTests: XCTestCase {
 
     func testParseCSIu() {
         // Ctrl+Shift+C: ESC [ 99 ; 6 u
-        mockTerminal.queueInput([0x1B, UInt8(ascii: "["), UInt8(ascii: "9"), UInt8(ascii: "9"), UInt8(ascii: ";"), UInt8(ascii: "6"), UInt8(ascii: "u")])
+        mockTerminal.queueInput([
+            0x1B, UInt8(ascii: "["), UInt8(ascii: "9"), UInt8(ascii: "9"), UInt8(ascii: ";"),
+            UInt8(ascii: "6"), UInt8(ascii: "u"),
+        ])
         XCTAssertEqual(parser.readKey(), .ctrlShift(UInt8(ascii: "c")))
     }
 
@@ -52,7 +56,7 @@ final class InputParserTests: XCTestCase {
         // M = Press/Drag
         let seq = "\u{1b}[<0;10;20M"
         mockTerminal.queueInput(seq)
-        
+
         // Expected: MouseButton.left, .press, row 19, col 9
         XCTAssertEqual(parser.readKey(), .mouse(.left, .press, 19, 9))
     }
@@ -62,7 +66,7 @@ final class InputParserTests: XCTestCase {
         // m = Release
         let seq = "\u{1b}[<0;10;20m"
         mockTerminal.queueInput(seq)
-        
+
         XCTAssertEqual(parser.readKey(), .mouse(.left, .release, 19, 9))
     }
 
@@ -72,7 +76,7 @@ final class InputParserTests: XCTestCase {
         // Left button drag is usually 32 + 0 = 32
         let seq = "\u{1b}[<32;10;20M"
         mockTerminal.queueInput(seq)
-        
+
         XCTAssertEqual(parser.readKey(), .mouse(.left, .drag, 19, 9))
     }
 
@@ -82,93 +86,65 @@ final class InputParserTests: XCTestCase {
         mockTerminal.queueInput(seq)
         XCTAssertEqual(parser.readKey(), .mouse(.right, .press, 4, 4))
     }
-    
+
     // MARK: - KeyDispatcher Tests (Legacy)
-    
+
     func testArrowKeysDispatch() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.right), mode: .maximized, pane: .hex), .forwardChar)
-        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.left), mode: .maximized, pane: .hex), .backwardChar)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.arrow(.right), mode: .maximized, pane: .hex), .forwardChar)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.arrow(.left), mode: .maximized, pane: .hex), .backwardChar)
     }
 
     func testViKeysDispatch() {
         // Hex mode: h,j,k,l work
-        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "h")), mode: .maximized, pane: .hex), .backwardChar)
-        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "j")), mode: .maximized, pane: .hex), .nextLine)
-        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "k")), mode: .maximized, pane: .hex), .previousLine)
-        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "l")), mode: .maximized, pane: .hex), .forwardChar)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.char(UInt8(ascii: "h")), mode: .maximized, pane: .hex),
+            .backwardChar)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.char(UInt8(ascii: "j")), mode: .maximized, pane: .hex),
+            .nextLine)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.char(UInt8(ascii: "k")), mode: .maximized, pane: .hex),
+            .previousLine)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.char(UInt8(ascii: "l")), mode: .maximized, pane: .hex),
+            .forwardChar)
 
         // Ascii mode: h,j,k,l insert char
-        if case .insertChar(let c) = KeyDispatcher.dispatch(.char(UInt8(ascii: "h")), mode: .maximized, pane: .ascii) {
+        if case .insertChar(let c) = KeyDispatcher.dispatch(
+            .char(UInt8(ascii: "h")), mode: .maximized, pane: .ascii)
+        {
             XCTAssertEqual(c, UInt8(ascii: "h"))
         } else {
             XCTFail("Should be insertChar in ASCII mode")
         }
     }
-    
+
     func testVisualModeKey() {
         // 'v' works in both modes
-        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .hex), .setMark)
-        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .ascii), .setMark)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .hex), .setMark
+        )
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .ascii),
+            .setMark)
     }
 
     func testRestoredAndNewShortcuts() {
-        // Ctrl+C should now be smartCopyOrQuit
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x03), mode: .maximized, pane: .hex), .smartCopyOrQuit)
-        
+        // Ctrl+C should now be quit (clean separation)
+        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x03), mode: .maximized, pane: .hex), .quit)
+
         // Ctrl+Q should now be quotedInsert
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x11), mode: .maximized, pane: .hex), .quotedInsert)
-        
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.ctrl(0x11), mode: .maximized, pane: .hex), .quotedInsert)
+
         // Ctrl+Shift+C should be copy to system clipboard
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrlShift(UInt8(ascii: "c")), mode: .maximized, pane: .hex), .copyToSystemClipboard)
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrlShift(UInt8(ascii: "C")), mode: .maximized, pane: .hex), .copyToSystemClipboard)
-    }
-
-    func testSmartCopyOrQuit_NoSelection_Quits() {
-        var state = EditorState() // Selection is unset by default
-        let mockTerm = MockTerminal()
-        let parser = InputParser(terminal: mockTerm)
-        
-        let result = Commands.execute(
-            .smartCopyOrQuit,
-            state: &state,
-            terminal: mockTerm,
-            inputParser: parser,
-            termSize: TerminalSize(cols: 80, rows: 24)
-        )
-        
-        XCTAssertFalse(result, "Should return false (quit) when no selection is set")
-    }
-
-    func testSmartCopyOrQuit_WithSelection_Copies() {
-        var state = EditorState()
-        // Avoid division by zero in Prompt
-        state.lineLength = 16 
-        state.page = 256
-        
-        // Initialize with some data so getSelectedData doesn't crash
-        let tempFile = "/tmp/haxedit_test_\(UUID().uuidString)"
-        FileManager.default.createFile(atPath: tempFile, contents: Data([0xAA, 0xBB, 0xCC]), attributes: nil)
-        try? state.openFile(tempFile)
-        state.readFile()
-        
-        state.selection.toggle(at: 0) // Set selection start
-        state.selection.update(oldPos: 0, newPos: 1, fileSize: 3, viewport: &state.viewport, base: 0) // Expand selection
-
-        let mockTerm = MockTerminal()
-        let parser = InputParser(terminal: mockTerm)
-        
-        // We expect it to try to copy. Crucially, it should return TRUE (continue running).
-        let result = Commands.execute(
-            .smartCopyOrQuit,
-            state: &state,
-            terminal: mockTerm,
-            inputParser: parser,
-            termSize: TerminalSize(cols: 80, rows: 24)
-        )
-        
-        XCTAssertTrue(result, "Should return true (continue) when selection is set")
-        
-        // Cleanup
-        try? FileManager.default.removeItem(atPath: tempFile)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.ctrlShift(UInt8(ascii: "c")), mode: .maximized, pane: .hex),
+            .copyToSystemClipboard)
+        XCTAssertEqual(
+            KeyDispatcher.dispatch(.ctrlShift(UInt8(ascii: "C")), mode: .maximized, pane: .hex),
+            .copyToSystemClipboard)
     }
 }
