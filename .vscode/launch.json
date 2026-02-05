@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:haxedit}",
+            "name": "Debug HaxEdit",
+            "target": "HaxEdit",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug HaxEdit"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:haxedit}",
+            "name": "Release HaxEdit",
+            "target": "HaxEdit",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release HaxEdit"
+        }
+    ]
+}

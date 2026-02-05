@@ -32,6 +32,7 @@ struct EditorState {
     var viewport: Viewport = Viewport(pageSize: 0)
     var selection: Selection = Selection()
     var clipboard: Clipboard = Clipboard()
+    var mouseDragStart: Int64? = nil  // Position where mouse was pressed (for drag selection)
 
     // Remembered strings for prompts
     var lastFindFile: String? = nil
@@ -64,7 +65,7 @@ struct EditorState {
     }
 
     var fileName: String {
-        get { fileHandle?.fileName ?? "" }
+        fileHandle?.fileName ?? ""
     }
 
     var lastEditedLoc: Int64 {
@@ -72,7 +73,7 @@ struct EditorState {
     }
 
     var biggestLoc: Int64 {
-        get { fileHandle?.biggestLoc ?? 0 }
+        fileHandle?.biggestLoc ?? 0
     }
 
     var fileSize: Int64 {
@@ -228,7 +229,8 @@ struct EditorState {
         if editPane.isHex {
             guard isHexDigit(c) else { return false }
             let hexVal = hexCharToInt(c)
-            val = cursorOffset == 0
+            val =
+                cursorOffset == 0
                 ? setHighBits(Int(viewport.buffer[cursor]), hexVal)
                 : setLowBits(Int(viewport.buffer[cursor]), hexVal)
         } else {

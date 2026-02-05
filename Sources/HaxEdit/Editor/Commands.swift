@@ -40,25 +40,35 @@ struct Commands {
 
         case .mouseEvent(let row, let col, let type):
             if let result = state.findOffsetFrom(row: row, col: col) {
-                let oldPos = state.base + Int64(state.cursor)
                 state.cursor = result.cursor
                 state.editPane = result.pane
                 state.cursorOffset = result.offset
                 let newPos = state.base + Int64(state.cursor)
 
                 if type == .press {
+                    // Just record where the drag might start - don't create a selection yet
                     state.viewport.unmarkAll()
                     state.selection.clear()
-                    state.selection.toggle(at: newPos)
-                    state.viewport.markIt(state.cursor)
+                    state.mouseDragStart = newPos
                 } else if type == .drag {
-                    state.selection.update(
-                        oldPos: oldPos,
-                        newPos: newPos,
-                        fileSize: state.fileSize,
-                        viewport: &state.viewport,
-                        base: state.base
-                    )
+                    // Now we're actually creating/extending a selection
+                    if let startPos = state.mouseDragStart {
+                        if !state.selection.isSet {
+                            // First drag movement - create the selection
+                            state.selection.isSet = true
+                            state.selection.min = min(startPos, newPos)
+                            state.selection.max = max(startPos, newPos)
+                        } else {
+                            // Update selection to span from start to current
+                            state.selection.min = min(startPos, newPos)
+                            state.selection.max = max(startPos, newPos)
+                        }
+                        state.viewport.markRegion(
+                            base: state.base,
+                            min: state.selection.min,
+                            max: state.selection.max
+                        )
+                    }
                 }
             }
 
@@ -164,8 +174,7 @@ struct Commands {
                 state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .smartCopyOrQuit:
-            // Only copy if there's an actual selection range (not just a single point mark)
-            if state.selection.isSet && state.selection.min < state.selection.max {
+            if state.selection.isSet {
                 copyToSystemClipboard(
                     state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
             } else {
