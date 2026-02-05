@@ -1,0 +1,118 @@
+.TH HAXEDIT 1 "February 2026"
+.SH NAME
+haxedit \- view and edit files in hexadecimal or in ASCII
+.SH SYNOPSIS
+.B haxedit
+[\-s | \-\-sector] [\-m | \-\-maximize] [\-l<n> | \-\-linelength <n>] [\-\-color] [\-h | \-\-help] [filename]
+.SH DESCRIPTION
+.B haxedit
+shows a file both in ASCII and in hexadecimal. The file can be a device as the file is read a piece at a time. You can modify the file and search through it.
+
+.SH OPTIONS
+.TP
+.B \-s, \-\-sector
+Format the display to have entire sectors.
+.TP
+.B \-m, \-\-maximize
+Try to maximize the display.
+.TP
+.B \-\-color
+Display colors.
+.TP
+.B \-l<n>, \-\-linelength <n>
+Explicitly set the number of bytes to display per line to <n>.
+.TP
+.B \-h, \-\-help
+Show the usage.
+
+.SH COMMANDS
+.SS Movement
+.TP
+.B Arrows, Ctrl+F/B/N/P
+Move the cursor.
+.TP
+.B Alt+Right/Left/Down/Up
+Move n times the cursor.
+.TP
+.B Home, Ctrl+A
+Go to beginning of line.
+.TP
+.B End, Ctrl+E
+Go to end of line.
+.TP
+.B PageUp, Alt+V, F5
+Page up.
+.TP
+.B PageDown, Ctrl+V, F6
+Page down.
+.TP
+.B <, Alt+<, Esc+Home
+Go to beginning of file.
+.TP
+.B >, Alt+>, Esc+End
+Go to end of file.
+
+.SS Miscellaneous
+.TP
+.B F2, Ctrl+W
+Save.
+.TP
+.B F3, Ctrl+O
+Open another file.
+.TP
+.B F1, Alt+H
+Help.
+.TP
+.B Ctrl+L
+Redraw.
+.TP
+.B Ctrl+Z
+Suspend.
+.TP
+.B Ctrl+X, F10
+Save and exit.
+.TP
+.B Ctrl+C
+Exit without saving.
+.TP
+.B Tab, Ctrl+T
+Toggle hex/ASCII.
+.TP
+.B Return
+Go to position (or sector).
+.TP
+.B Backspace, Ctrl+H
+Undo previous byte modification.
+.TP
+.B Ctrl+U, Ctrl+_
+Undo all modifications.
+.TP
+.B /, Ctrl+S
+Search forward.
+.TP
+.B Ctrl+R
+Search backward.
+
+.SS Cut & Paste
+.TP
+.B Ctrl+Space, F9
+Set mark.
+.TP
+.B Ctrl+D, Alt+W, F7
+Copy selected region.
+.TP
+.B Ctrl+Y, Insert, F8
+Paste.
+.TP
+.B Alt+Y, F11
+Paste into a file.
+.TP
+.B Alt+I, F12
+Fill selection with string.
+.TP
+.B Alt+T
+Truncate file at current position.
+
+.SH AUTHORS
+Original \fBhexedit\fR by Pascal Rigaux <pixel@rigaux.org>.
+\fBhaxedit\fR rewrite in Swift by euxaristia.
