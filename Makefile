@@ -19,10 +19,16 @@ local-install: $(BINARY)
 	install -d $(HOME)/.local/bin
 	install $(BINARY) $(HOME)/.local/bin/haxedit
 
+uninstall:
+	rm -f $(BINDIR)/haxedit
+
+local-uninstall:
+	rm -f $(HOME)/.local/bin/haxedit
+
 $(BINARY):
 	swift build -c release --static-swift-stdlib
 
 clean:
 	rm -rf .build
 
-.PHONY: all build test install local-install clean
+.PHONY: all build test install local-install uninstall local-uninstall clean
