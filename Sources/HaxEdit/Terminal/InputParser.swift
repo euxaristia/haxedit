@@ -201,6 +201,22 @@ final class InputParser {
     private func csiTildeKey(_ params: [Int]) -> KeyEvent {
         guard let code = params.first else { return .none }
         switch code {
+        case 27:
+            // Xterm modified key: ESC [ 27 ; modifier ; code ~
+            guard params.count >= 3 else { return .none }
+            let modifier = params[1]
+            let charCode = params[2]
+            
+            // Modifier bits: 1=Shift, 2=Alt, 4=Ctrl
+            // Uses 1 + bits (same as CSI u)
+            switch modifier {
+            case 5: // Ctrl
+                return .ctrl(UInt8(charCode & 0xFF))
+            case 6: // Ctrl + Shift
+                return .ctrlShift(UInt8(charCode & 0xFF))
+            default:
+                return .none
+            }
         case 1:  return .home
         case 2:  return .insert
         case 3:  return .delete

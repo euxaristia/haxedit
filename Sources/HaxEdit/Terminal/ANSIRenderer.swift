@@ -30,6 +30,10 @@ struct ANSIRenderer {
     static let enableMouseTracking = "\u{1b}[?1000h\u{1b}[?1002h\u{1b}[?1006h"
     static let disableMouseTracking = "\u{1b}[?1006l\u{1b}[?1002l\u{1b}[?1000l"
 
+    // MARK: - Keyboard Protocols
+    static let enableKittyKeyboard = "\u{1b}[>1u"
+    static let disableKittyKeyboard = "\u{1b}[<u"
+
     // MARK: - Text Attributes
     static let resetAttributes = "\u{1b}[0m"
     static let bold = "\u{1b}[1m"
