@@ -93,12 +93,14 @@ final class Terminal: TerminalProtocol {
 
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
         writeString(ANSIRenderer.enableMouseTracking)
+        writeString(ANSIRenderer.enableKittyKeyboard)
         flush()
         isRawMode = true
     }
 
     func disableRawMode() {
         guard isRawMode else { return }
+        writeString(ANSIRenderer.disableKittyKeyboard)
         writeString(ANSIRenderer.disableMouseTracking)
         flush()
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &originalTermios)

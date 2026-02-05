@@ -34,6 +34,7 @@ args.removeFirst()
 var fileName: String? = nil
 var forceReadOnly = false
 var requestedLineLength: Int = 0
+var debugKeys = false
 
 var i = 0
 while i < args.count {
@@ -41,6 +42,8 @@ while i < args.count {
 
     if arg == "-s" || arg == "--sector" {
         state.mode = .bySector
+    } else if arg == "--debug-keys" {
+        debugKeys = true
     } else if arg == "-r" || arg == "--readonly" {
         forceReadOnly = true
     } else if arg == "-m" || arg == "--maximize" {
@@ -166,6 +169,13 @@ while running {
     // Read key
     let key = inputParser.readKey()
     state.saveOldState()
+
+    if debugKeys && key != .none && key != .resize {
+        Prompt.displayMessageAndWaitForKey(
+            "Key: \(key)", state: state, terminal: terminal,
+            inputParser: inputParser, termSize: terminal.size
+        )
+    }
 
     // Handle resize
     if key == .resize || terminal.checkResize() {
