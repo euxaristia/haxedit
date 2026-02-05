@@ -1,4 +1,4 @@
-# HaxEdit
+# #️⃣ HaxEdit
 
 A modern, pure Swift reimplementation of the classic [HexEdit](http://rigaux.org/hexedit.html) tool.
 
