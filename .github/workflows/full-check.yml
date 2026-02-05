@@ -1,27 +1,17 @@
-name: full-check
+name: Swift Build & Test
 
 on: [push, pull_request]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v2
-    - name: install_dependencies
-      run: sudo apt install libncurses5-dev
-    - name: first_build
-      run: |
-           ./autogen.sh
-           ./configure
-           make
-           sudo make install
-#           sudo make uninstall
-#           make distclean
-#    - name: second_build_to_test_build_twice
-#      run: |
-#           ./autogen.sh
-#           ./configure
-#           make
-#           sudo make install
+    - uses: actions/checkout@v4
+    - name: Set up Swift
+      uses: swift-actions/setup-swift@v2
+      with:
+        swift-version: "5.10"
+    - name: Build
+      run: swift build
+    - name: Run tests
+      run: swift test
