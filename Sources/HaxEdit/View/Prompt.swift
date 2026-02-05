@@ -88,7 +88,7 @@ struct Prompt {
                 }
                 return buffer
 
-            case .escape:
+            case .escape, .ctrl(0x03): // Esc or Ctrl+C
                 return nil
 
             case .backspace:
