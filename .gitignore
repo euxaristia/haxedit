@@ -1,11 +1,5 @@
-#output
-hexedit
-
-#build system dirt
-configure
-config.h*
-Makefile
-Makefile-build
-
-#compiled object files
-*.o
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+*.xcworkspace/
