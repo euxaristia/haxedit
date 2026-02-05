@@ -80,8 +80,17 @@ enum KeyEvent: Equatable {
     case enter
     case tab
     case escape
+    case mouse(MouseButton, MouseEventType, Int, Int) // button, event type, row, col
     case resize                       // SIGWINCH
     case none                         // no input / timeout
+}
+
+enum MouseButton: Equatable {
+    case left, middle, right, none
+}
+
+enum MouseEventType: Equatable {
+    case press, release, drag
 }
 
 enum ArrowDirection: Equatable {
@@ -105,6 +114,7 @@ enum EditorAction {
     case scrollDown          // page up (backward in file)
     case beginningOfBuffer
     case endOfBuffer
+    case mouseEvent(row: Int, col: Int, type: MouseEventType)
 
     // Editing
     case insertChar(UInt8)

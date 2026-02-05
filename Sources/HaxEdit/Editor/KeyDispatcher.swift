@@ -5,7 +5,7 @@ struct KeyDispatcher {
 
     /// Map a KeyEvent to an EditorAction.
     /// Returns nil for unrecognized keys.
-    static func dispatch(_ key: KeyEvent, mode: DisplayMode) -> EditorAction? {
+    static func dispatch(_ key: KeyEvent, mode: DisplayMode, pane: EditPane) -> EditorAction? {
         switch key {
         // Arrow keys
         case .arrow(.right):                return .forwardChar
@@ -114,8 +114,34 @@ struct KeyDispatcher {
         // Escape alone (not followed by sequence)
         case .escape:                       return nil
 
-        // Printable characters → insertChar
-        case .char(let c):                  return .insertChar(c)
+        // Printable characters
+        case .char(let c):
+            if pane.isHex {
+                switch c {
+                case UInt8(ascii: "h"): return .backwardChar
+                case UInt8(ascii: "j"): return .nextLine
+                case UInt8(ascii: "k"): return .previousLine
+                case UInt8(ascii: "l"): return .forwardChar
+                case UInt8(ascii: "v"): return .setMark
+                case UInt8(ascii: "y"): return .copyRegion
+                case UInt8(ascii: "p"): return .yank
+                case UInt8(ascii: "w"): return .forwardChars
+                case UInt8(ascii: "b"): return .backwardChars
+                case UInt8(ascii: "G"): return .endOfBuffer
+                default: break
+                }
+            }
+            if c == UInt8(ascii: "v") {
+                return .setMark
+            }
+            return .insertChar(c)
+
+        // Mouse events
+        case .mouse(let button, let type, let row, let col):
+            if button == .left || (button == .none && type == .drag) {
+                return .mouseEvent(row: row, col: col, type: type)
+            }
+            return nil
 
         // Ctrl+Alt+H → delete backward chars
         case .ctrlAlt(0x08):                return .deleteBackwardChars

@@ -12,7 +12,7 @@ struct Search {
     /// Search forward from cursor position.
     static func forward(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -71,7 +71,7 @@ struct Search {
     /// Search backward from cursor position.
     static func backward(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -138,7 +138,7 @@ struct Search {
 
     private static func getSearchPattern(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) -> [UInt8]? {
@@ -179,7 +179,7 @@ struct Search {
     private static func finishSearch(
         state: inout EditorState,
         loc: Int64,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {

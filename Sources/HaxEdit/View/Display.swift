@@ -64,14 +64,14 @@ struct Display {
                 if posInLine % blocSize == 0 {
                     // Block separator (extra space)
                     out += ANSIRenderer.resetAttributes
-                    if i < max && state.viewport.attributes[i].contains(.marked) &&
+                    if state.editPane.isHex && i < max && state.viewport.attributes[i].contains(.marked) &&
                        state.viewport.attributes[i - 1].contains(.marked) {
                         out += ANSIRenderer.reverse
                     }
                     out += "  "
                 } else {
                     out += ANSIRenderer.resetAttributes
-                    if i < max && state.viewport.attributes[i].contains(.marked) &&
+                    if state.editPane.isHex && i < max && state.viewport.attributes[i].contains(.marked) &&
                        i > 0 && state.viewport.attributes[i - 1].contains(.marked) {
                         out += ANSIRenderer.reverse
                     }
@@ -89,7 +89,8 @@ struct Display {
                     byteAttr: attr,
                     byteColor: color,
                     isCursor: isCursorHex,
-                    colored: state.colored
+                    colored: state.colored,
+                    showMarked: state.editPane.isHex
                 )
                 out += ANSIRenderer.hexByte(byte)
             } else {
@@ -115,7 +116,8 @@ struct Display {
                     byteAttr: attr,
                     byteColor: color,
                     isCursor: isCursorAscii,
-                    colored: state.colored
+                    colored: state.colored,
+                    showMarked: state.editPane.isAscii
                 )
                 out += String(ANSIRenderer.printableChar(byte))
             }
