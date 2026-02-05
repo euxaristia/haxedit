@@ -2,7 +2,7 @@
 
 /// Which editing column the cursor is in
 enum EditPane: Int {
-    case hex = 1    // hexOrAscii = TRUE (1) in original
+    case hex = 1  // hexOrAscii = TRUE (1) in original
     case ascii = 0  // hexOrAscii = FALSE (0) in original
 
     mutating func toggle() {
@@ -35,17 +35,17 @@ let modeDefaults: [DisplayMode: ModeParams] = [
 struct ByteAttribute: OptionSet {
     let rawValue: Int
 
-    static let normal   = ByteAttribute([])
+    static let normal = ByteAttribute([])
     static let modified = ByteAttribute(rawValue: 1 << 0)  // A_BOLD in original
-    static let marked   = ByteAttribute(rawValue: 1 << 1)  // A_REVERSE in original
+    static let marked = ByteAttribute(rawValue: 1 << 1)  // A_REVERSE in original
 }
 
 /// Byte color classification for colored mode
 enum ByteColor {
-    case null       // 0x00 → red
-    case control    // 0x01-0x1F → green
-    case normal     // 0x20-0x7E → default
-    case extended   // 0x7F-0xFF → blue
+    case null  // 0x00 → red
+    case control  // 0x01-0x1F → green
+    case normal  // 0x20-0x7E → default
+    case extended  // 0x7F-0xFF → blue
 
     init(byte: UInt8) {
         switch byte {
@@ -63,14 +63,14 @@ enum ByteColor {
 
 /// Parsed keyboard input
 enum KeyEvent: Equatable {
-    case char(UInt8)                  // printable ASCII character
-    case ctrl(UInt8)                  // Ctrl+letter (raw 0x01-0x1F)
-    case ctrlShift(UInt8)             // Ctrl+Shift+letter
-    case alt(UInt8)                   // Alt+letter (ESC + char)
-    case ctrlAlt(UInt8)              // Ctrl+Alt combination
-    case arrow(ArrowDirection)        // arrow keys
-    case altArrow(ArrowDirection)     // Alt+arrow keys
-    case functionKey(Int)             // F1-F12
+    case char(UInt8)  // printable ASCII character
+    case ctrl(UInt8)  // Ctrl+letter (raw 0x01-0x1F)
+    case ctrlShift(UInt8)  // Ctrl+Shift+letter
+    case alt(UInt8)  // Alt+letter (ESC + char)
+    case ctrlAlt(UInt8)  // Ctrl+Alt combination
+    case arrow(ArrowDirection)  // arrow keys
+    case altArrow(ArrowDirection)  // Alt+arrow keys
+    case functionKey(Int)  // F1-F12
     case home
     case end
     case pageUp
@@ -81,9 +81,9 @@ enum KeyEvent: Equatable {
     case enter
     case tab
     case escape
-    case mouse(MouseButton, MouseEventType, Int, Int) // button, event type, row, col
-    case resize                       // SIGWINCH
-    case none                         // no input / timeout
+    case mouse(MouseButton, MouseEventType, Int, Int)  // button, event type, row, col
+    case resize  // SIGWINCH
+    case none  // no input / timeout
 }
 
 enum MouseButton: Equatable {
@@ -105,14 +105,14 @@ enum EditorAction: Equatable {
     case backwardChar
     case nextLine
     case previousLine
-    case forwardChars        // move by blocSize
+    case forwardChars  // move by blocSize
     case backwardChars
-    case nextLines           // move by lineLength * blocSize
+    case nextLines  // move by lineLength * blocSize
     case previousLines
     case beginningOfLine
     case endOfLine
-    case scrollUp            // page down (forward in file)
-    case scrollDown          // page up (backward in file)
+    case scrollUp  // page down (forward in file)
+    case scrollDown  // page up (backward in file)
     case beginningOfBuffer
     case endOfBuffer
     case mouseEvent(row: Int, col: Int, type: MouseEventType)
@@ -145,7 +145,6 @@ enum EditorAction: Equatable {
     case setMark
     case copyRegion
     case copyToSystemClipboard
-    case smartCopyOrQuit // Copy if selection exists, else quit
     case yank
     case yankToFile
     case fillWithString
@@ -189,8 +188,8 @@ enum HaxEditError: Error, CustomStringConvertible {
 
 // MARK: - Constants
 
-let biggestCopying = 1024 * 1024        // 1MB max copy
-let blockSearchSize = 4096              // 4KB search blocks
+let biggestCopying = 1024 * 1024  // 1MB max copy
+let blockSearchSize = 4096  // 4KB search blocks
 let sectorSize: Int64 = 512
 let pressAnyKey = "(press any key)"
 
@@ -217,8 +216,8 @@ func hexCharToInt(_ c: UInt8) -> Int {
 func isHexDigit(_ c: UInt8) -> Bool {
     switch c {
     case UInt8(ascii: "0")...UInt8(ascii: "9"),
-         UInt8(ascii: "a")...UInt8(ascii: "f"),
-         UInt8(ascii: "A")...UInt8(ascii: "F"):
+        UInt8(ascii: "a")...UInt8(ascii: "f"),
+        UInt8(ascii: "A")...UInt8(ascii: "F"):
         return true
     default:
         return false
