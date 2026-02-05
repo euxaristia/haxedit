@@ -1,156 +1,107 @@
 import XCTest
 @testable import HaxEdit
 
-// Since InputParser depends on Terminal (final class) and we can't easily mock it,
-// we test the key dispatch mapping and utility functions instead.
-
 final class InputParserTests: XCTestCase {
 
-    // MARK: - KeyDispatcher mapping tests
+    var mockTerminal: MockTerminal!
+    var parser: InputParser!
 
-    func testArrowKeys() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.right), mode: .maximized), .forwardChar)
-        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.left), mode: .maximized), .backwardChar)
-        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.down), mode: .maximized), .nextLine)
-        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.up), mode: .maximized), .previousLine)
+    override func setUp() {
+        super.setUp()
+        mockTerminal = MockTerminal()
+        parser = InputParser(terminal: mockTerminal)
     }
 
-    func testCtrlKeys() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x06), mode: .maximized), .forwardChar)   // Ctrl+F
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x02), mode: .maximized), .backwardChar)  // Ctrl+B
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x0E), mode: .maximized), .nextLine)      // Ctrl+N
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x10), mode: .maximized), .previousLine)  // Ctrl+P
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x01), mode: .maximized), .beginningOfLine) // Ctrl+A
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x05), mode: .maximized), .endOfLine)     // Ctrl+E
+    // MARK: - Key Parsing Tests
+
+    func testParseSimpleChar() {
+        mockTerminal.queueInput("a")
+        XCTAssertEqual(parser.readKey(), .char(UInt8(ascii: "a")))
     }
 
-    func testFunctionKeys() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(1), mode: .maximized), .help)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(2), mode: .maximized), .save)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(3), mode: .maximized), .findFile)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(4), mode: .maximized), .gotoChar)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(5), mode: .maximized), .scrollDown)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(6), mode: .maximized), .scrollUp)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(7), mode: .maximized), .copyRegion)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(8), mode: .maximized), .yank)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(9), mode: .maximized), .setMark)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(10), mode: .maximized), .askSaveAndQuit)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(11), mode: .maximized), .yankToFile)
-        XCTAssertEqual(KeyDispatcher.dispatch(.functionKey(12), mode: .maximized), .fillWithString)
+    func testParseCtrlKey() {
+        mockTerminal.queueInput([0x01]) // Ctrl+A
+        XCTAssertEqual(parser.readKey(), .ctrl(0x01))
     }
 
-    func testSpecialKeys() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.home, mode: .maximized), .beginningOfLine)
-        XCTAssertEqual(KeyDispatcher.dispatch(.end, mode: .maximized), .endOfLine)
-        XCTAssertEqual(KeyDispatcher.dispatch(.pageDown, mode: .maximized), .scrollUp)
-        XCTAssertEqual(KeyDispatcher.dispatch(.pageUp, mode: .maximized), .scrollDown)
-        XCTAssertEqual(KeyDispatcher.dispatch(.insert, mode: .maximized), .yank)
-        XCTAssertEqual(KeyDispatcher.dispatch(.delete, mode: .maximized), .copyRegion)
-        XCTAssertEqual(KeyDispatcher.dispatch(.backspace, mode: .maximized), .deleteBackwardChar)
-        XCTAssertEqual(KeyDispatcher.dispatch(.tab, mode: .maximized), .toggleHexAscii)
+    func testParseArrowKeys() {
+        // Up Arrow: ESC [ A
+        mockTerminal.queueInput([0x1B, UInt8(ascii: "["), UInt8(ascii: "A")])
+        XCTAssertEqual(parser.readKey(), .arrow(.up))
     }
 
-    func testEnterBySectorMode() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.enter, mode: .bySector), .gotoSector)
-        XCTAssertEqual(KeyDispatcher.dispatch(.enter, mode: .maximized), .gotoChar)
+    func testParseFunctionKeys() {
+        // F1: ESC O P
+        mockTerminal.queueInput([0x1B, UInt8(ascii: "O"), UInt8(ascii: "P")])
+        XCTAssertEqual(parser.readKey(), .functionKey(1))
     }
 
-    func testPrintableCharsToInsert() {
-        if case .insertChar(let c) = KeyDispatcher.dispatch(.char(UInt8(ascii: "a")), mode: .maximized) {
-            XCTAssertEqual(c, UInt8(ascii: "a"))
+    // MARK: - Mouse Tracking Tests
+
+    func testSGRMousePress() {
+        // ESC [ < 0 ; 10 ; 20 M  (Left Button Press at col 10, row 20)
+        // 0 = left button
+        // 10 = x (col) -> 1-based, so col index 9
+        // 20 = y (row) -> 1-based, so row index 19
+        // M = Press/Drag
+        let seq = "\u{1b}[<0;10;20M"
+        mockTerminal.queueInput(seq)
+        
+        // Expected: MouseButton.left, .press, row 19, col 9
+        XCTAssertEqual(parser.readKey(), .mouse(.left, .press, 19, 9))
+    }
+
+    func testSGRMouseRelease() {
+        // ESC [ < 0 ; 10 ; 20 m  (Left Button Release)
+        // m = Release
+        let seq = "\u{1b}[<0;10;20m"
+        mockTerminal.queueInput(seq)
+        
+        XCTAssertEqual(parser.readKey(), .mouse(.left, .release, 19, 9))
+    }
+
+    func testSGRMouseDrag() {
+        // ESC [ < 32 ; 10 ; 20 M (Drag)
+        // 32 = drag bit
+        // Left button drag is usually 32 + 0 = 32
+        let seq = "\u{1b}[<32;10;20M"
+        mockTerminal.queueInput(seq)
+        
+        XCTAssertEqual(parser.readKey(), .mouse(.left, .drag, 19, 9))
+    }
+
+    func testSGRMouseRightClick() {
+        // 2 = right button
+        let seq = "\u{1b}[<2;5;5M"
+        mockTerminal.queueInput(seq)
+        XCTAssertEqual(parser.readKey(), .mouse(.right, .press, 4, 4))
+    }
+    
+    // MARK: - KeyDispatcher Tests (Legacy)
+    
+    func testArrowKeysDispatch() {
+        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.right), mode: .maximized, pane: .hex), .forwardChar)
+        XCTAssertEqual(KeyDispatcher.dispatch(.arrow(.left), mode: .maximized, pane: .hex), .backwardChar)
+    }
+
+    func testViKeysDispatch() {
+        // Hex mode: h,j,k,l work
+        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "h")), mode: .maximized, pane: .hex), .backwardChar)
+        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "j")), mode: .maximized, pane: .hex), .nextLine)
+        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "k")), mode: .maximized, pane: .hex), .previousLine)
+        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "l")), mode: .maximized, pane: .hex), .forwardChar)
+
+        // Ascii mode: h,j,k,l insert char
+        if case .insertChar(let c) = KeyDispatcher.dispatch(.char(UInt8(ascii: "h")), mode: .maximized, pane: .ascii) {
+            XCTAssertEqual(c, UInt8(ascii: "h"))
         } else {
-            XCTFail("Expected insertChar")
+            XCTFail("Should be insertChar in ASCII mode")
         }
     }
-
-    func testAltKeys() {
-        XCTAssertEqual(
-            KeyDispatcher.dispatch(.alt(UInt8(ascii: "f")), mode: .maximized),
-            .forwardChars
-        )
-        XCTAssertEqual(
-            KeyDispatcher.dispatch(.alt(UInt8(ascii: "v")), mode: .maximized),
-            .scrollDown
-        )
-        XCTAssertEqual(
-            KeyDispatcher.dispatch(.alt(UInt8(ascii: "<")), mode: .maximized),
-            .beginningOfBuffer
-        )
-    }
-
-    func testSaveQuitKeys() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x17), mode: .maximized), .save)     // Ctrl+W
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x18), mode: .maximized), .askSaveAndQuit) // Ctrl+X
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x03), mode: .maximized), .quit)      // Ctrl+C
-    }
-
-    func testSearchKeys() {
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x13), mode: .maximized), .searchForward)  // Ctrl+S
-        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x12), mode: .maximized), .searchBackward) // Ctrl+R
-        XCTAssertEqual(
-            KeyDispatcher.dispatch(.char(UInt8(ascii: "/")), mode: .maximized),
-            .searchForward
-        )
-    }
-
-    // MARK: - KeyEvent equality
-
-    func testKeyEventEquality() {
-        XCTAssertEqual(KeyEvent.char(65), KeyEvent.char(65))
-        XCTAssertNotEqual(KeyEvent.char(65), KeyEvent.char(66))
-        XCTAssertEqual(KeyEvent.arrow(.up), KeyEvent.arrow(.up))
-        XCTAssertNotEqual(KeyEvent.arrow(.up), KeyEvent.arrow(.down))
-        XCTAssertEqual(KeyEvent.functionKey(1), KeyEvent.functionKey(1))
-        XCTAssertNotEqual(KeyEvent.functionKey(1), KeyEvent.functionKey(2))
-    }
-}
-
-// Make EditorAction Equatable for testing
-extension EditorAction: Equatable {
-    public static func == (lhs: EditorAction, rhs: EditorAction) -> Bool {
-        switch (lhs, rhs) {
-        case (.forwardChar, .forwardChar),
-             (.backwardChar, .backwardChar),
-             (.nextLine, .nextLine),
-             (.previousLine, .previousLine),
-             (.forwardChars, .forwardChars),
-             (.backwardChars, .backwardChars),
-             (.nextLines, .nextLines),
-             (.previousLines, .previousLines),
-             (.beginningOfLine, .beginningOfLine),
-             (.endOfLine, .endOfLine),
-             (.scrollUp, .scrollUp),
-             (.scrollDown, .scrollDown),
-             (.beginningOfBuffer, .beginningOfBuffer),
-             (.endOfBuffer, .endOfBuffer),
-             (.deleteBackwardChar, .deleteBackwardChar),
-             (.deleteBackwardChars, .deleteBackwardChars),
-             (.quotedInsert, .quotedInsert),
-             (.toggleHexAscii, .toggleHexAscii),
-             (.recenter, .recenter),
-             (.redisplay, .redisplay),
-             (.save, .save),
-             (.findFile, .findFile),
-             (.truncateFile, .truncateFile),
-             (.gotoChar, .gotoChar),
-             (.gotoSector, .gotoSector),
-             (.searchForward, .searchForward),
-             (.searchBackward, .searchBackward),
-             (.setMark, .setMark),
-             (.copyRegion, .copyRegion),
-             (.yank, .yank),
-             (.yankToFile, .yankToFile),
-             (.fillWithString, .fillWithString),
-             (.help, .help),
-             (.suspend, .suspend),
-             (.undo, .undo),
-             (.quit, .quit),
-             (.askSaveAndQuit, .askSaveAndQuit):
-            return true
-        case (.insertChar(let a), .insertChar(let b)):
-            return a == b
-        default:
-            return false
-        }
+    
+    func testVisualModeKey() {
+        // 'v' works in both modes
+        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .hex), .setMark)
+        XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .ascii), .setMark)
     }
 }

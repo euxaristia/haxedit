@@ -26,6 +26,10 @@ struct ANSIRenderer {
     static let clearToEndOfScreen = "\u{1b}[J"
     static let clearLine = "\u{1b}[2K"
 
+    // MARK: - Mouse Tracking
+    static let enableMouseTracking = "\u{1b}[?1000h\u{1b}[?1002h\u{1b}[?1006h"
+    static let disableMouseTracking = "\u{1b}[?1006l\u{1b}[?1002l\u{1b}[?1000l"
+
     // MARK: - Text Attributes
     static let resetAttributes = "\u{1b}[0m"
     static let bold = "\u{1b}[1m"
@@ -62,7 +66,8 @@ struct ANSIRenderer {
         byteAttr: ByteAttribute,
         byteColor: ByteColor,
         isCursor: Bool,
-        colored: Bool
+        colored: Bool,
+        showMarked: Bool = true
     ) -> String {
         var seq = "\u{1b}[0"  // start with reset
 
@@ -73,10 +78,10 @@ struct ANSIRenderer {
             if byteAttr.contains(.modified) {
                 seq += ";1"  // bold
             }
-            if byteAttr.contains(.marked) {
+            if showMarked && byteAttr.contains(.marked) {
                 seq += ";7"  // reverse
             }
-            if colored && !byteAttr.contains(.marked) {
+            if colored && !(showMarked && byteAttr.contains(.marked)) {
                 switch byteColor {
                 case .null:     seq += ";31"  // red
                 case .control:  seq += ";32"  // green

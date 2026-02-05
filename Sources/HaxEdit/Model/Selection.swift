@@ -71,6 +71,13 @@ struct Selection {
             max = fileSize - 1
         }
 
+        // Safety: Ensure min <= max
+        if min > max {
+            let temp = min
+            min = max
+            max = temp
+        }
+
         // Re-mark the selected region
         viewport.markRegion(base: base, min: min, max: max)
     }

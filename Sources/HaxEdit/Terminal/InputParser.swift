@@ -7,9 +7,9 @@
 //   - SS3 sequences: ESC O ... (F1-F4, arrows)
 
 final class InputParser {
-    private let terminal: Terminal
+    private let terminal: TerminalProtocol
 
-    init(terminal: Terminal) {
+    init(terminal: TerminalProtocol) {
         self.terminal = terminal
     }
 
@@ -117,6 +117,9 @@ final class InputParser {
             case UInt8(ascii: "0")...UInt8(ascii: "9"):
                 currentParam = currentParam * 10 + Int(byte - UInt8(ascii: "0"))
                 hasParam = true
+            case UInt8(ascii: "<"):
+                // SGR mouse mode prefix
+                return parseSGRMouse()
             case UInt8(ascii: ";"):
                 params.append(hasParam ? currentParam : 0)
                 currentParam = 0
@@ -222,6 +225,61 @@ final class InputParser {
     }
 
     // MARK: - SS3 Sequences (ESC O)
+
+    private func parseSGRMouse() -> KeyEvent {
+        var params: [Int] = []
+        var currentParam = 0
+        var hasParam = false
+
+        while true {
+            guard let byte = terminal.readByteImmediate() else {
+                return .none
+            }
+
+            switch byte {
+            case UInt8(ascii: "0")...UInt8(ascii: "9"):
+                currentParam = currentParam * 10 + Int(byte - UInt8(ascii: "0"))
+                hasParam = true
+            case UInt8(ascii: ";"):
+                params.append(hasParam ? currentParam : 0)
+                currentParam = 0
+                hasParam = false
+            case UInt8(ascii: "M"), UInt8(ascii: "m"):
+                if hasParam { params.append(currentParam) }
+                guard params.count >= 3 else { return .none }
+
+                let b = params[0]
+                let x = params[1]
+                let y = params[2]
+                let isRelease = (byte == UInt8(ascii: "m"))
+
+                let button: MouseButton
+                let type: MouseEventType
+
+                // SGR button bits:
+                // 0: left, 1: middle, 2: right, 3: release (not for SGR 'm'), 32: drag
+                if (b & 32) != 0 {
+                    type = .drag
+                } else if isRelease {
+                    type = .release
+                } else {
+                    type = .press
+                }
+
+                switch b & 3 {
+                case 0: button = .left
+                case 1: button = .middle
+                case 2: button = .right
+                default: button = .none
+                }
+
+                // SGR coordinates are 1-based
+                return .mouse(button, type, y - 1, x - 1)
+            default:
+                return .none
+            }
+        }
+    }
 
     private func parseSS3() -> KeyEvent {
         guard let byte = terminal.readByteImmediate() else {

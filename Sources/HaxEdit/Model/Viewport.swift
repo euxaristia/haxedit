@@ -38,14 +38,18 @@ struct Viewport {
         edits.forEachPage { page in
             let overlapStart = max(base, page.base)
             let overlapEnd = min(page.base + Int64(page.size), base + Int64(pageSize))
-            for i in overlapStart..<overlapEnd {
-                let bufIdx = Int(i - base)
-                let pageIdx = Int(i - page.base)
-                if buffer[bufIdx] != page.vals[pageIdx] {
-                    buffer[bufIdx] = page.vals[pageIdx]
-                    attributes[bufIdx].insert(.modified)
+            
+            if overlapStart < overlapEnd {
+                for i in overlapStart..<overlapEnd {
+                    let bufIdx = Int(i - base)
+                    let pageIdx = Int(i - page.base)
+                    if buffer[bufIdx] != page.vals[pageIdx] {
+                        buffer[bufIdx] = page.vals[pageIdx]
+                        attributes[bufIdx].insert(.modified)
+                    }
                 }
             }
+            
             // Check for modifications past EOF
             if page.base + Int64(page.size) > base + Int64(nbBytes) {
                 while nbBytes < pageSize && Int64(nbBytes) < page.base + Int64(page.size) - base {

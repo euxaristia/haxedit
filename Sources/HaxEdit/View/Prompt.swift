@@ -7,7 +7,7 @@ struct Prompt {
     static func displayOneLineMessage(
         _ msg: String,
         state: EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         termSize: TerminalSize
     ) {
         let center = state.page / state.lineLength / 2
@@ -21,7 +21,7 @@ struct Prompt {
         _ msg1: String,
         _ msg2: String,
         state: EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         termSize: TerminalSize
     ) {
         let center = state.page / state.lineLength / 2
@@ -38,7 +38,7 @@ struct Prompt {
     static func displayMessageAndWaitForKey(
         _ msg: String,
         state: EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -52,7 +52,7 @@ struct Prompt {
         _ msg: String,
         lastValue: String?,
         state: EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) -> String? {
@@ -125,6 +125,10 @@ struct Prompt {
             case .resize:
                 return nil
 
+            case .none:
+                // Should not happen in blocking mode, but safety for tests
+                return nil
+
             default:
                 break
             }
@@ -134,7 +138,7 @@ struct Prompt {
     /// Get a number (hex with 0x prefix, or decimal)
     static func getNumber(
         state: EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize,
         prompt: String

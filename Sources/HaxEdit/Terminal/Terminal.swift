@@ -9,9 +9,12 @@ import Darwin
 protocol TerminalProtocol {
     var size: TerminalSize { get }
     func readByte(timeout: Int) -> UInt8?
+    func readByteImmediate() -> UInt8?
+    func checkResize() -> Bool
     func writeBytes(_ bytes: [UInt8])
     func writeString(_ string: String)
     func flush()
+    func suspend()
 }
 
 struct TerminalSize: Equatable {
@@ -87,11 +90,14 @@ final class Terminal: TerminalProtocol {
         }
 
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
+        writeString(ANSIRenderer.enableMouseTracking)
+        flush()
         isRawMode = true
     }
 
     func disableRawMode() {
         guard isRawMode else { return }
+        writeString(ANSIRenderer.disableMouseTracking)
         flush()
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &originalTermios)
         isRawMode = false

@@ -188,7 +188,7 @@ while running {
     if key == .none { continue }
 
     // Dispatch key to action
-    if let action = KeyDispatcher.dispatch(key, mode: state.mode) {
+    if let action = KeyDispatcher.dispatch(key, mode: state.mode, pane: state.editPane) {
         running = Commands.execute(
             action,
             state: &state,

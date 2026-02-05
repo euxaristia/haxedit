@@ -14,7 +14,7 @@ struct Commands {
     static func execute(
         _ action: EditorAction,
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) -> Bool {
@@ -35,6 +35,30 @@ struct Commands {
         case .beginningOfBuffer: state.beginningOfBuffer()
         case .endOfBuffer:      state.endOfBuffer()
         case .recenter:         state.recenter()
+
+        case .mouseEvent(let row, let col, let type):
+            if let result = state.findOffsetFrom(row: row, col: col) {
+                let oldPos = state.base + Int64(state.cursor)
+                state.cursor = result.cursor
+                state.editPane = result.pane
+                state.cursorOffset = result.offset
+                let newPos = state.base + Int64(state.cursor)
+
+                if type == .press {
+                    state.viewport.unmarkAll()
+                    state.selection.clear()
+                    state.selection.toggle(at: newPos)
+                    state.viewport.markIt(state.cursor)
+                } else if type == .drag {
+                    state.selection.update(
+                        oldPos: oldPos,
+                        newPos: newPos,
+                        fileSize: state.fileSize,
+                        viewport: &state.viewport,
+                        base: state.base
+                    )
+                }
+            }
 
         // Editing
         case .insertChar(let c):
@@ -164,7 +188,7 @@ struct Commands {
 
     static func saveBuffer(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -201,7 +225,7 @@ struct Commands {
     /// Returns true if the user wants to quit
     static func askAboutSave(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) -> Int {
@@ -228,7 +252,7 @@ struct Commands {
     /// Returns true if the editor should quit
     static func askAboutSaveAndQuit(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) -> Bool {
@@ -243,7 +267,7 @@ struct Commands {
 
     static func gotoChar(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -287,7 +311,7 @@ struct Commands {
 
     static func gotoSector(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -322,7 +346,7 @@ struct Commands {
 
     static func findFile(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -369,7 +393,7 @@ struct Commands {
 
     static func truncateFile(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -423,7 +447,7 @@ struct Commands {
 
     static func copyRegion(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -436,7 +460,7 @@ struct Commands {
         }
 
         let size = Int(state.selection.max - state.selection.min + 1)
-        if size == 0 { return }
+        if size <= 0 { return }
 
         if size > biggestCopying {
             Prompt.displayTwoLineMessage(
@@ -479,7 +503,7 @@ struct Commands {
 
     static func yank(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -507,7 +531,7 @@ struct Commands {
 
     static func yankToFile(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -562,7 +586,7 @@ struct Commands {
 
     static func fillWithString(
         state: inout EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
@@ -645,7 +669,7 @@ struct Commands {
 
     static func showHelp(
         state: EditorState,
-        terminal: Terminal,
+        terminal: TerminalProtocol,
         inputParser: InputParser,
         termSize: TerminalSize
     ) {

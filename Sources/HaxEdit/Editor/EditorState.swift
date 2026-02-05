@@ -86,14 +86,14 @@ struct EditorState {
     // MARK: - Layout Computation
 
     /// Compute the X position for a cursor at a given offset in a given pane
-    func computeCursorXPos(cursor: Int, pane: EditPane) -> Int {
+    func computeCursorXPos(cursor: Int, pane: EditPane, offset: Int? = nil) -> Int {
         var r = nAddrDigits + 3
         let x = cursor % lineLength
         let h = pane.isHex ? x : lineLength - 1
 
         r += normalSpaces * (h % blocSize) + (h / blocSize) * (normalSpaces * blocSize + 1)
         if pane.isHex {
-            r += cursorOffset
+            r += (offset ?? cursorOffset)
         }
 
         if pane.isAscii {
@@ -109,6 +109,31 @@ struct EditorState {
 
     func computeLineSize() -> Int {
         return computeCursorXPos(cursor: lineLength - 1, pane: .ascii) + 1
+    }
+
+    /// Map terminal coordinates to cursor position and pane
+    func findOffsetFrom(row: Int, col: Int) -> (cursor: Int, pane: EditPane, offset: Int)? {
+        guard row >= 0 && row < (page / lineLength) else { return nil }
+
+        // Try hex pane first
+        for x in 0..<lineLength {
+            for off in 0...1 {
+                let xPos = computeCursorXPos(cursor: x, pane: .hex, offset: off)
+                if xPos == col {
+                    return (row * lineLength + x, .hex, off)
+                }
+            }
+        }
+
+        // Try ascii pane
+        for x in 0..<lineLength {
+            let xPos = computeCursorXPos(cursor: x, pane: .ascii)
+            if xPos == col {
+                return (row * lineLength + x, .ascii, 0)
+            }
+        }
+
+        return nil
     }
 
     /// Initialize display layout based on terminal size
