@@ -2,7 +2,7 @@
 
 A modern, pure Swift reimplementation of the classic [HexEdit](http://rigaux.org/hexedit.html) tool.
 
-HaxEdit maintains the familiar keybindings and features of the original `hexedit` while providing a modern, maintainable codebase and type safety.
+HaxEdit maintains the features of the original `hexedit` while providing a modern, maintainable codebase and type safety.
 
 ## Features
 
