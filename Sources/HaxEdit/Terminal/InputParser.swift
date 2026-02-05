@@ -147,9 +147,35 @@ final class InputParser {
                 // Sun-style: e.g. ESC [ 214 z
                 if hasParam { params.append(currentParam) }
                 return csiZKey(params)
+            case UInt8(ascii: "u"):
+                // CSI u (Enhanced Keyboard Protocol)
+                if hasParam { params.append(currentParam) }
+                return csiUKey(params)
             default:
                 return .none
             }
+        }
+    }
+
+    /// CSI sequences ending with u (CSI u / Enhanced Keyboard Protocol)
+    private func csiUKey(_ params: [Int]) -> KeyEvent {
+        guard params.count >= 2 else { return .none }
+        let code = params[0]
+        let modifier = params[1]
+
+        // Modifier bits: 1=Shift, 2=Alt, 4=Ctrl
+        // CSI u uses 1 + bits
+        // 2=Shift, 3=Alt, 4=Shift+Alt, 5=Ctrl, 6=Shift+Ctrl, 7=Alt+Ctrl, 8=Shift+Alt+Ctrl
+        
+        switch modifier {
+        case 5: // Ctrl
+            return .ctrl(UInt8(code & 0xFF))
+        case 6: // Ctrl + Shift
+            return .ctrlShift(UInt8(code & 0xFF))
+        case 2: // Shift
+            return .char(UInt8(code & 0xFF)) // Should probably be upper case anyway if code is char
+        default:
+            return .none
         }
     }
 

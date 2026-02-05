@@ -36,6 +36,12 @@ final class InputParserTests: XCTestCase {
         XCTAssertEqual(parser.readKey(), .functionKey(1))
     }
 
+    func testParseCSIu() {
+        // Ctrl+Shift+C: ESC [ 99 ; 6 u
+        mockTerminal.queueInput([0x1B, UInt8(ascii: "["), UInt8(ascii: "9"), UInt8(ascii: "9"), UInt8(ascii: ";"), UInt8(ascii: "6"), UInt8(ascii: "u")])
+        XCTAssertEqual(parser.readKey(), .ctrlShift(UInt8(ascii: "c")))
+    }
+
     // MARK: - Mouse Tracking Tests
 
     func testSGRMousePress() {

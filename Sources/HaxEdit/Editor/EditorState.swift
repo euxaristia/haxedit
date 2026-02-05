@@ -248,4 +248,32 @@ struct EditorState {
         oldCursorOffset = cursorOffset
         oldBase = base
     }
+
+    /// Extract data from the current selection, overlaying any pending edits.
+    func getSelectedData() -> [UInt8] {
+        guard selection.isSet else { return [] }
+        let size = Int(selection.max - selection.min + 1)
+        if size <= 0 { return [] }
+
+        // Read from file
+        let result = fileHandle.readPage(at: selection.min, size: size)
+        var data = result.data
+
+        // Overlay edits
+        edits.forEachPage { page in
+            if selection.min < page.base + Int64(page.size) && page.base <= selection.max {
+                let overlapStart = max(page.base, selection.min)
+                let overlapEnd = min(page.base + Int64(page.size), selection.max + 1)
+                let count = min(Int(overlapEnd - overlapStart), page.size)
+                for i in 0..<count {
+                    let dstIdx = Int(overlapStart - selection.min)
+                    let srcIdx = Int(overlapStart - page.base)
+                    if dstIdx + i < data.count && srcIdx + i < page.vals.count {
+                        data[dstIdx + i] = page.vals[srcIdx + i]
+                    }
+                }
+            }
+        }
+        return data
+    }
 }

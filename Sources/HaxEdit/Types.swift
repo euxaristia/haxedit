@@ -65,6 +65,7 @@ enum ByteColor {
 enum KeyEvent: Equatable {
     case char(UInt8)                  // printable ASCII character
     case ctrl(UInt8)                  // Ctrl+letter (raw 0x01-0x1F)
+    case ctrlShift(UInt8)             // Ctrl+Shift+letter
     case alt(UInt8)                   // Alt+letter (ESC + char)
     case ctrlAlt(UInt8)              // Ctrl+Alt combination
     case arrow(ArrowDirection)        // arrow keys
@@ -143,6 +144,7 @@ enum EditorAction {
     // Mark / Clipboard
     case setMark
     case copyRegion
+    case copyToSystemClipboard
     case yank
     case yankToFile
     case fillWithString

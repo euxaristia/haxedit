@@ -33,6 +33,7 @@ class MockTerminal: TerminalProtocol {
     func writeString(_ string: String) {}
     func flush() {}
     func suspend() {}
+    func setSystemClipboard(_ string: String) {}
 
     // Helper to queue input
     func queueInput(_ bytes: [UInt8]) {
@@ -77,6 +78,7 @@ extension EditorAction: Equatable {
              (.searchBackward, .searchBackward),
              (.setMark, .setMark),
              (.copyRegion, .copyRegion),
+             (.copyToSystemClipboard, .copyToSystemClipboard),
              (.yank, .yank),
              (.yankToFile, .yankToFile),
              (.fillWithString, .fillWithString),
