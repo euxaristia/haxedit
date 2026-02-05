@@ -1,5 +1,7 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
+BUILD_DIR = .build/release
+BINARY = $(BUILD_DIR)/HaxEdit
 
 all: build
 
@@ -9,13 +11,16 @@ build:
 test:
 	swift test
 
-install: build
+install: $(BINARY)
 	install -d $(BINDIR)
-	install .build/release/HaxEdit $(BINDIR)/hexedit
+	install $(BINARY) $(BINDIR)/hexedit
 
-local-install: build
+local-install: $(BINARY)
 	install -d $(HOME)/.local/bin
-	install .build/release/HaxEdit $(HOME)/.local/bin/hexedit
+	install $(BINARY) $(HOME)/.local/bin/hexedit
+
+$(BINARY):
+	swift build -c release --static-swift-stdlib
 
 clean:
 	rm -rf .build
