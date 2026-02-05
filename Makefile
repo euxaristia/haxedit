@@ -13,11 +13,11 @@ test:
 
 install: $(BINARY)
 	install -d $(BINDIR)
-	install $(BINARY) $(BINDIR)/hexedit
+	install $(BINARY) $(BINDIR)/haxedit
 
 local-install: $(BINARY)
 	install -d $(HOME)/.local/bin
-	install $(BINARY) $(HOME)/.local/bin/hexedit
+	install $(BINARY) $(HOME)/.local/bin/haxedit
 
 $(BINARY):
 	swift build -c release --static-swift-stdlib
