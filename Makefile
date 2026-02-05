@@ -3,22 +3,22 @@ BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 BUILD_DIR = .build/release
 BINARY = $(BUILD_DIR)/HaxEdit
+SOURCES = $(shell find Sources -name "*.swift")
 
 all: build
 
-build:
-	swift build -c release --static-swift-stdlib
+build: $(BINARY)
 
 test:
 	swift test
 
-install: build
+install: $(BINARY)
 	install -d $(BINDIR)
 	install $(BINARY) $(BINDIR)/haxedit
 	install -d $(MANDIR)
 	install -m 644 haxedit.1 $(MANDIR)/haxedit.1
 
-local-install: build
+local-install: $(BINARY)
 	install -d $(HOME)/.local/bin
 	install $(BINARY) $(HOME)/.local/bin/haxedit
 	install -d $(HOME)/.local/share/man/man1
@@ -31,6 +31,9 @@ uninstall:
 local-uninstall:
 	rm -f $(HOME)/.local/bin/haxedit
 	rm -f $(HOME)/.local/share/man/man1/haxedit.1
+
+$(BINARY): $(SOURCES) Package.swift
+	swift build -c release --static-swift-stdlib
 
 clean:
 	rm -rf .build
