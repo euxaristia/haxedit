@@ -31,11 +31,11 @@ struct ANSIRenderer {
     static let disableMouseTracking = "\u{1b}[?1006l\u{1b}[?1002l\u{1b}[?1000l"
 
     // MARK: - Keyboard Protocols
-    // Kitty keyboard protocol: flag 9 = bit 0 (disambiguate) + bit 3 (report all keys as escape codes)
-    // With flag 9: Both Ctrl+C and Ctrl+Shift+C come as CSI u sequences with proper modifiers
+    // Kitty keyboard protocol: flag 1 = bit 0 (disambiguate)
+    // With flag 1: Ctrl+C comes as CSI u sequence, but plain keys come as raw bytes.
     // - Ctrl+C: ESC [ 99 ; 5 u (modifier 5 = Ctrl)
     // - Ctrl+Shift+C: ESC [ 99 ; 6 u (modifier 6 = Ctrl+Shift)
-    static let enableKittyKeyboard = "\u{1b}[>9u\u{1b}[>4;2m"
+    static let enableKittyKeyboard = "\u{1b}[>1u\u{1b}[>4;1m"
     static let disableKittyKeyboard = "\u{1b}[<u\u{1b}[>4;0m"
 
     // MARK: - Text Attributes
