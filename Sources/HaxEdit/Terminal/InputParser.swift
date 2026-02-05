@@ -184,12 +184,16 @@ final class InputParser {
             return .char(applyShift(c))
         case 3:  // Alt
             return .alt(c)
+        case 4:  // Shift + Alt
+            return .alt(applyShift(c))
         case 5:  // Ctrl
             return .ctrl(toControlCode(c))
         case 6:  // Ctrl + Shift
             return .ctrlShift(c)
         case 7:  // Ctrl + Alt
             return .ctrlAlt(toControlCode(c))
+        case 8:  // Ctrl + Alt + Shift
+            return .ctrlAlt(toControlCode(applyShift(c)))
         default:
             return .char(c)
         }
@@ -266,10 +270,20 @@ final class InputParser {
             // Modifier bits: 1=Shift, 2=Alt, 4=Ctrl
             // Uses 1 + bits (same as CSI u)
             switch modifier {
+            case 2:  // Shift
+                return .char(applyShift(c))
+            case 3:  // Alt
+                return .alt(c)
+            case 4:  // Shift + Alt
+                return .alt(applyShift(c))
             case 5:  // Ctrl
                 return .ctrl(toControlCode(c))
             case 6:  // Ctrl + Shift
                 return .ctrlShift(c)
+            case 7:  // Ctrl + Alt
+                return .ctrlAlt(toControlCode(c))
+            case 8:  // Ctrl + Alt + Shift
+                return .ctrlAlt(toControlCode(applyShift(c)))
             default:
                 return .none
             }
