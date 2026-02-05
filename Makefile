@@ -34,10 +34,15 @@ local-uninstall:
 
 $(BINARY): $(SOURCES) Package.swift
 	@if [ "$$(id -u)" = "0" ]; then \
-		echo "Error: Cannot build as root. Please run 'make' as a regular user first."; \
-		exit 1; \
+		if [ -n "$$SUDO_USER" ]; then \
+			sudo -u "$$SUDO_USER" swift build -c release --static-swift-stdlib; \
+		else \
+			echo "Error: Cannot build as root. Please run 'make' as a regular user first."; \
+			exit 1; \
+		fi; \
+	else \
+		swift build -c release --static-swift-stdlib; \
 	fi
-	swift build -c release --static-swift-stdlib
 
 clean:
 	rm -rf .build
