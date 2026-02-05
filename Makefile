@@ -12,13 +12,13 @@ build:
 test:
 	swift test
 
-install: $(BINARY)
+install: build
 	install -d $(BINDIR)
 	install $(BINARY) $(BINDIR)/haxedit
 	install -d $(MANDIR)
 	install -m 644 haxedit.1 $(MANDIR)/haxedit.1
 
-local-install: $(BINARY)
+local-install: build
 	install -d $(HOME)/.local/bin
 	install $(BINARY) $(HOME)/.local/bin/haxedit
 	install -d $(HOME)/.local/share/man/man1
@@ -31,9 +31,6 @@ uninstall:
 local-uninstall:
 	rm -f $(HOME)/.local/bin/haxedit
 	rm -f $(HOME)/.local/share/man/man1/haxedit.1
-
-$(BINARY):
-	swift build -c release --static-swift-stdlib
 
 clean:
 	rm -rf .build
