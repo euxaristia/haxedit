@@ -61,20 +61,22 @@ struct Display {
             if i > offset {
                 // Separator between bytes
                 let posInLine = i - offset
-                if posInLine % blocSize == 0 {
-                    // Block separator (extra space)
-                    out += ANSIRenderer.resetAttributes
-                    if state.editPane.isHex && i < max && state.viewport.attributes[i].contains(.marked) &&
-                       state.viewport.attributes[i - 1].contains(.marked) {
+                let isMarked = state.viewport.attributes[i].contains(.marked)
+                let prevMarked = state.viewport.attributes[i - 1].contains(.marked)
+                let bothMarked = isMarked && prevMarked
+
+                out += ANSIRenderer.resetAttributes
+                if bothMarked {
+                    if state.editPane.isHex {
                         out += ANSIRenderer.reverse
+                    } else {
+                        out += ANSIRenderer.dim
                     }
+                }
+
+                if posInLine % blocSize == 0 {
                     out += "  "
                 } else {
-                    out += ANSIRenderer.resetAttributes
-                    if state.editPane.isHex && i < max && state.viewport.attributes[i].contains(.marked) &&
-                       i > 0 && state.viewport.attributes[i - 1].contains(.marked) {
-                        out += ANSIRenderer.reverse
-                    }
                     out += " "
                 }
             }
@@ -83,6 +85,8 @@ struct Display {
                 let byte = state.viewport.buffer[i]
                 let attr = state.viewport.attributes[i]
                 let isCursorHex = (state.cursor == i && state.editPane.isHex)
+                let isOtherCursorHex = (state.cursor == i && state.editPane.isAscii)
+                let isMarked = attr.contains(.marked)
                 let color = ByteColor(byte: byte)
 
                 out += ANSIRenderer.attributesFor(
@@ -90,7 +94,9 @@ struct Display {
                     byteColor: color,
                     isCursor: isCursorHex,
                     colored: state.colored,
-                    showMarked: state.editPane.isHex
+                    showMarked: state.editPane.isHex,
+                    isOtherCursor: isOtherCursorHex,
+                    isOtherMarked: !state.editPane.isHex && isMarked
                 )
                 out += ANSIRenderer.hexByte(byte)
             } else {
@@ -110,6 +116,8 @@ struct Display {
                 let byte = state.viewport.buffer[i]
                 let attr = state.viewport.attributes[i]
                 let isCursorAscii = (state.cursor == i && state.editPane.isAscii)
+                let isOtherCursorAscii = (state.cursor == i && state.editPane.isHex)
+                let isMarked = attr.contains(.marked)
                 let color = ByteColor(byte: byte)
 
                 out += ANSIRenderer.attributesFor(
@@ -117,7 +125,9 @@ struct Display {
                     byteColor: color,
                     isCursor: isCursorAscii,
                     colored: state.colored,
-                    showMarked: state.editPane.isAscii
+                    showMarked: state.editPane.isAscii,
+                    isOtherCursor: isOtherCursorAscii,
+                    isOtherMarked: !state.editPane.isAscii && isMarked
                 )
                 out += String(ANSIRenderer.printableChar(byte))
             }
