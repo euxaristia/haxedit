@@ -110,4 +110,65 @@ final class InputParserTests: XCTestCase {
         XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .hex), .setMark)
         XCTAssertEqual(KeyDispatcher.dispatch(.char(UInt8(ascii: "v")), mode: .maximized, pane: .ascii), .setMark)
     }
+
+    func testRestoredAndNewShortcuts() {
+        // Ctrl+C should now be smartCopyOrQuit
+        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x03), mode: .maximized, pane: .hex), .smartCopyOrQuit)
+        
+        // Ctrl+Q should now be quotedInsert
+        XCTAssertEqual(KeyDispatcher.dispatch(.ctrl(0x11), mode: .maximized, pane: .hex), .quotedInsert)
+        
+        // Ctrl+Shift+C should be copy to system clipboard
+        XCTAssertEqual(KeyDispatcher.dispatch(.ctrlShift(UInt8(ascii: "c")), mode: .maximized, pane: .hex), .copyToSystemClipboard)
+        XCTAssertEqual(KeyDispatcher.dispatch(.ctrlShift(UInt8(ascii: "C")), mode: .maximized, pane: .hex), .copyToSystemClipboard)
+    }
+
+    func testSmartCopyOrQuit_NoSelection_Quits() {
+        var state = EditorState() // Selection is unset by default
+        let mockTerm = MockTerminal()
+        let parser = InputParser(terminal: mockTerm)
+        
+        let result = Commands.execute(
+            .smartCopyOrQuit,
+            state: &state,
+            terminal: mockTerm,
+            inputParser: parser,
+            termSize: TerminalSize(cols: 80, rows: 24)
+        )
+        
+        XCTAssertFalse(result, "Should return false (quit) when no selection is set")
+    }
+
+    func testSmartCopyOrQuit_WithSelection_Copies() {
+        var state = EditorState()
+        // Avoid division by zero in Prompt
+        state.lineLength = 16 
+        state.page = 256
+        
+        // Initialize with some data so getSelectedData doesn't crash
+        let tempFile = "/tmp/haxedit_test_\(UUID().uuidString)"
+        FileManager.default.createFile(atPath: tempFile, contents: Data([0xAA, 0xBB, 0xCC]), attributes: nil)
+        try? state.openFile(tempFile)
+        state.readFile()
+        
+        state.selection.toggle(at: 0) // Set selection start
+        state.selection.update(oldPos: 0, newPos: 1, fileSize: 3, viewport: &state.viewport, base: 0) // Expand selection
+
+        let mockTerm = MockTerminal()
+        let parser = InputParser(terminal: mockTerm)
+        
+        // We expect it to try to copy. Crucially, it should return TRUE (continue running).
+        let result = Commands.execute(
+            .smartCopyOrQuit,
+            state: &state,
+            terminal: mockTerm,
+            inputParser: parser,
+            termSize: TerminalSize(cols: 80, rows: 24)
+        )
+        
+        XCTAssertTrue(result, "Should return true (continue) when selection is set")
+        
+        // Cleanup
+        try? FileManager.default.removeItem(atPath: tempFile)
+    }
 }

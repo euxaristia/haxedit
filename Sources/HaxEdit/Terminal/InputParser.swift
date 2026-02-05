@@ -6,6 +6,14 @@
 //   - CSI sequences: ESC [ ... (arrows, F-keys, Home/End/PgUp/PgDn/Ins/Del)
 //   - SS3 sequences: ESC O ... (F1-F4, arrows)
 
+import Foundation
+
+#if canImport(Glibc)
+    import Glibc
+#elseif canImport(Darwin)
+    import Darwin
+#endif
+
 final class InputParser {
     private let terminal: TerminalProtocol
 
@@ -41,25 +49,25 @@ final class InputParser {
 
     private func parseByte(_ byte: UInt8) -> KeyEvent {
         switch byte {
-        case 0x1B: // ESC
+        case 0x1B:  // ESC
             return parseEscape()
-        case 0x00: // Ctrl+Space
+        case 0x00:  // Ctrl+Space
             return .ctrl(0)
-        case 0x01...0x07: // Ctrl+A through Ctrl+G
+        case 0x01...0x07:  // Ctrl+A through Ctrl+G
             return .ctrl(byte)
-        case 0x08: // Ctrl+H / Backspace
+        case 0x08:  // Ctrl+H / Backspace
             return .backspace
-        case 0x09: // Tab
+        case 0x09:  // Tab
             return .tab
-        case 0x0A, 0x0D: // Enter (LF or CR)
+        case 0x0A, 0x0D:  // Enter (LF or CR)
             return .enter
-        case 0x0B...0x0C: // Ctrl+K, Ctrl+L
+        case 0x0B...0x0C:  // Ctrl+K, Ctrl+L
             return .ctrl(byte)
-        case 0x0E...0x1A: // Ctrl+N through Ctrl+Z
+        case 0x0E...0x1A:  // Ctrl+N through Ctrl+Z
             return .ctrl(byte)
-        case 0x1C...0x1F: // Ctrl+\, Ctrl+], Ctrl+^, Ctrl+_
+        case 0x1C...0x1F:  // Ctrl+\, Ctrl+], Ctrl+^, Ctrl+_
             return .ctrl(byte)
-        case 0x7F: // DEL (some terminals send this for backspace)
+        case 0x7F:  // DEL (some terminals send this for backspace)
             return .backspace
         case 0x80...0xFF:
             // High-bit set could be Alt+char (meta-sends-escape not set)
@@ -78,22 +86,22 @@ final class InputParser {
         }
 
         switch next {
-        case UInt8(ascii: "["): // CSI
+        case UInt8(ascii: "["):  // CSI
             return parseCSI()
-        case UInt8(ascii: "O"): // SS3
+        case UInt8(ascii: "O"):  // SS3
             return parseSS3()
-        case 0x1B: // ESC ESC - could be double escape, or ESC [ coming
+        case 0x1B:  // ESC ESC - could be double escape, or ESC [ coming
             // Try to read one more to disambiguate
             if let third = terminal.readByteImmediate() {
                 if third == UInt8(ascii: "[") {
                     // ESC ESC [ — treat as Alt + CSI sequence
                     return parseAltCSI()
                 } else {
-                    return .escape // consume second ESC, ignore third
+                    return .escape  // consume second ESC, ignore third
                 }
             }
             return .escape
-        case 0x01...0x1A: // ESC + Ctrl+letter = Ctrl+Alt
+        case 0x01...0x1A:  // ESC + Ctrl+letter = Ctrl+Alt
             return .ctrlAlt(next)
         default:
             // Alt+char
@@ -159,24 +167,41 @@ final class InputParser {
 
     /// CSI sequences ending with u (CSI u / Enhanced Keyboard Protocol)
     private func csiUKey(_ params: [Int]) -> KeyEvent {
-        guard params.count >= 2 else { return .none }
-        let code = params[0]
+        guard let code = params.first else { return .none }
+        let c = UInt8(code & 0xFF)
+
+        // If no modifier parameter, treat as plain character
+        guard params.count >= 2 else { return .char(c) }
         let modifier = params[1]
 
         // Modifier bits: 1=Shift, 2=Alt, 4=Ctrl
-        // CSI u uses 1 + bits
-        // 2=Shift, 3=Alt, 4=Shift+Alt, 5=Ctrl, 6=Shift+Ctrl, 7=Alt+Ctrl, 8=Shift+Alt+Ctrl
-        
+        // CSI u uses 1 + bits (so base value 1 = no modifiers)
+        // 1=none, 2=Shift, 3=Alt, 4=Shift+Alt, 5=Ctrl, 6=Shift+Ctrl, 7=Alt+Ctrl, 8=Shift+Alt+Ctrl
         switch modifier {
-        case 5: // Ctrl
-            return .ctrl(UInt8(code & 0xFF))
-        case 6: // Ctrl + Shift
-            return .ctrlShift(UInt8(code & 0xFF))
-        case 2: // Shift
-            return .char(UInt8(code & 0xFF)) // Should probably be upper case anyway if code is char
+        case 1:  // No modifiers
+            return .char(c)
+        case 2:  // Shift
+            return .char(c)
+        case 3:  // Alt
+            return .alt(c)
+        case 5:  // Ctrl
+            return .ctrl(toControlCode(c))
+        case 6:  // Ctrl + Shift
+            return .ctrlShift(c)
+        case 7:  // Ctrl + Alt
+            return .ctrlAlt(toControlCode(c))
         default:
-            return .none
+            return .char(c)
         }
+    }
+
+    private func toControlCode(_ c: UInt8) -> UInt8 {
+        if c >= 64 && c <= 95 {
+            return c - 64
+        } else if c >= 97 && c <= 122 {
+            return c - 96
+        }
+        return c
     }
 
     // Alt + CSI sequence (ESC ESC [)
@@ -206,25 +231,26 @@ final class InputParser {
             guard params.count >= 3 else { return .none }
             let modifier = params[1]
             let charCode = params[2]
-            
+
+            let c = UInt8(charCode & 0xFF)
             // Modifier bits: 1=Shift, 2=Alt, 4=Ctrl
             // Uses 1 + bits (same as CSI u)
             switch modifier {
-            case 5: // Ctrl
-                return .ctrl(UInt8(charCode & 0xFF))
-            case 6: // Ctrl + Shift
-                return .ctrlShift(UInt8(charCode & 0xFF))
+            case 5:  // Ctrl
+                return .ctrl(toControlCode(c))
+            case 6:  // Ctrl + Shift
+                return .ctrlShift(c)
             default:
                 return .none
             }
-        case 1:  return .home
-        case 2:  return .insert
-        case 3:  return .delete
-        case 4:  return .end
-        case 5:  return .pageUp
-        case 6:  return .pageDown
-        case 7:  return .home      // rxvt
-        case 8:  return .end       // rxvt
+        case 1: return .home
+        case 2: return .insert
+        case 3: return .delete
+        case 4: return .end
+        case 5: return .pageUp
+        case 6: return .pageDown
+        case 7: return .home  // rxvt
+        case 8: return .end  // rxvt
         case 11: return .functionKey(1)
         case 12: return .functionKey(2)
         case 13: return .functionKey(3)
@@ -245,8 +271,8 @@ final class InputParser {
     private func csiQKey(_ params: [Int]) -> KeyEvent {
         guard let code = params.first else { return .none }
         switch code {
-        case 10:  return .functionKey(10)
-        default:  return .none
+        case 10: return .functionKey(10)
+        default: return .none
         }
     }
 
@@ -262,7 +288,7 @@ final class InputParser {
         case 233: return .functionKey(10)
         case 234: return .functionKey(11)
         case 247: return .insert
-        default:  return .none
+        default: return .none
         }
     }
 

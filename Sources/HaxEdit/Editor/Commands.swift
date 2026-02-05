@@ -1,9 +1,10 @@
-#if canImport(Glibc)
-import Glibc
-#elseif canImport(Darwin)
-import Darwin
-#endif
 import Foundation
+
+#if canImport(Glibc)
+    import Glibc
+#elseif canImport(Darwin)
+    import Darwin
+#endif
 
 // MARK: - Commands
 // Executes editor actions. Port of interact.c command functions.
@@ -21,21 +22,21 @@ struct Commands {
     ) -> Bool {
         switch action {
         // Movement
-        case .forwardChar:      state.forwardChar()
-        case .backwardChar:     state.backwardChar()
-        case .nextLine:         state.nextLine()
-        case .previousLine:     state.previousLine()
-        case .forwardChars:     state.forwardChars()
-        case .backwardChars:    state.backwardChars()
-        case .nextLines:        state.nextLines()
-        case .previousLines:    state.previousLines()
-        case .beginningOfLine:  state.beginningOfLine()
-        case .endOfLine:        state.endOfLine()
-        case .scrollUp:         state.scrollUp()
-        case .scrollDown:       state.scrollDown()
+        case .forwardChar: state.forwardChar()
+        case .backwardChar: state.backwardChar()
+        case .nextLine: state.nextLine()
+        case .previousLine: state.previousLine()
+        case .forwardChars: state.forwardChars()
+        case .backwardChars: state.backwardChars()
+        case .nextLines: state.nextLines()
+        case .previousLines: state.previousLines()
+        case .beginningOfLine: state.beginningOfLine()
+        case .endOfLine: state.endOfLine()
+        case .scrollUp: state.scrollUp()
+        case .scrollDown: state.scrollDown()
         case .beginningOfBuffer: state.beginningOfBuffer()
-        case .endOfBuffer:      state.endOfBuffer()
-        case .recenter:         state.recenter()
+        case .endOfBuffer: state.endOfBuffer()
+        case .recenter: state.recenter()
 
         case .mouseEvent(let row, let col, let type):
             if let result = state.findOffsetFrom(row: row, col: col) {
@@ -86,7 +87,9 @@ struct Commands {
             state.edits.remove(base: state.base + Int64(state.cursor), size: 1)
             state.readFile()
             state.cursorOffset = 0
-            if !state.fileHandle.tryloc(state.base + Int64(state.cursor), lastEditedLoc: state.lastEditedLoc) {
+            if !state.fileHandle.tryloc(
+                state.base + Int64(state.cursor), lastEditedLoc: state.lastEditedLoc)
+            {
                 state.endOfBuffer()
             }
 
@@ -95,7 +98,9 @@ struct Commands {
             state.edits.remove(base: state.base + Int64(state.cursor), size: state.blocSize)
             state.readFile()
             state.cursorOffset = 0
-            if !state.fileHandle.tryloc(state.base + Int64(state.cursor), lastEditedLoc: state.lastEditedLoc) {
+            if !state.fileHandle.tryloc(
+                state.base + Int64(state.cursor), lastEditedLoc: state.lastEditedLoc)
+            {
                 state.endOfBuffer()
             }
 
@@ -117,46 +122,66 @@ struct Commands {
 
         // File operations
         case .save:
-            saveBuffer(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            saveBuffer(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .findFile:
-            findFile(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            findFile(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .truncateFile:
-            truncateFile(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            truncateFile(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         // Navigation
         case .gotoChar:
-            gotoChar(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            gotoChar(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .gotoSector:
-            gotoSector(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            gotoSector(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         // Search
         case .searchForward:
-            Search.forward(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            Search.forward(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .searchBackward:
-            Search.backward(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            Search.backward(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         // Mark / Clipboard
         case .setMark:
             setMark(state: &state)
 
         case .copyRegion:
-            copyRegion(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            copyRegion(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .copyToSystemClipboard:
-            copyToSystemClipboard(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            copyToSystemClipboard(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+
+        case .smartCopyOrQuit:
+            // Only copy if there's an actual selection range (not just a single point mark)
+            if state.selection.isSet && state.selection.min < state.selection.max {
+                copyToSystemClipboard(
+                    state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            } else {
+                return false  // Quit
+            }
 
         case .yank:
             yank(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .yankToFile:
-            yankToFile(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            yankToFile(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         case .fillWithString:
-            fillWithString(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            fillWithString(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
 
         // Control
         case .help:
@@ -243,7 +268,8 @@ struct Commands {
         let key = inputParser.readKey()
         switch key {
         case .char(UInt8(ascii: "y")), .char(UInt8(ascii: "Y")):
-            saveBuffer(state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
+            saveBuffer(
+                state: &state, terminal: terminal, inputParser: inputParser, termSize: termSize)
             return 1
         case .char(UInt8(ascii: "n")), .char(UInt8(ascii: "N")):
             state.edits.discardAll()
@@ -276,14 +302,16 @@ struct Commands {
         termSize: TerminalSize
     ) {
         // Pre-fill with "0x"
-        guard let input = Prompt.displayMessageAndGetString(
-            "New position ? ",
-            lastValue: "0x",
-            state: state,
-            terminal: terminal,
-            inputParser: inputParser,
-            termSize: termSize
-        ) else { return }
+        guard
+            let input = Prompt.displayMessageAndGetString(
+                "New position ? ",
+                lastValue: "0x",
+                state: state,
+                terminal: terminal,
+                inputParser: inputParser,
+                termSize: termSize
+            )
+        else { return }
 
         // Parse the number
         let trimmed = trimWhitespace(input)
@@ -319,14 +347,16 @@ struct Commands {
         inputParser: InputParser,
         termSize: TerminalSize
     ) {
-        guard let input = Prompt.displayMessageAndGetString(
-            "New sector ? ",
-            lastValue: nil,
-            state: state,
-            terminal: terminal,
-            inputParser: inputParser,
-            termSize: termSize
-        ) else { return }
+        guard
+            let input = Prompt.displayMessageAndGetString(
+                "New sector ? ",
+                lastValue: nil,
+                state: state,
+                terminal: terminal,
+                inputParser: inputParser,
+                termSize: termSize
+            )
+        else { return }
 
         if let sector = UInt64(trimWhitespace(input)) {
             let pos = Int64(sector) * sectorSize
@@ -364,14 +394,16 @@ struct Commands {
             state.readFile()
         }
 
-        guard let name = Prompt.displayMessageAndGetString(
-            "File name: ",
-            lastValue: state.lastFindFile,
-            state: state,
-            terminal: terminal,
-            inputParser: inputParser,
-            termSize: termSize
-        ) else { return }
+        guard
+            let name = Prompt.displayMessageAndGetString(
+                "File name: ",
+                lastValue: state.lastFindFile,
+                state: state,
+                terminal: terminal,
+                inputParser: inputParser,
+                termSize: termSize
+            )
+        else { return }
 
         guard isFile(name) else {
             Prompt.displayMessageAndWaitForKey(
@@ -513,7 +545,7 @@ struct Commands {
         }
 
         terminal.setSystemClipboard(stringToCopy)
-        
+
         // Don't unmark selection for system copy, as it's often used repeatedly
         Prompt.displayMessageAndWaitForKey(
             "Copied to system clipboard", state: state, terminal: terminal,
@@ -565,14 +597,16 @@ struct Commands {
             return
         }
 
-        guard let name = Prompt.displayMessageAndGetString(
-            "File name: ",
-            lastValue: state.lastYankToAFile,
-            state: state,
-            terminal: terminal,
-            inputParser: inputParser,
-            termSize: termSize
-        ) else { return }
+        guard
+            let name = Prompt.displayMessageAndGetString(
+                "File name: ",
+                lastValue: state.lastYankToAFile,
+                state: state,
+                terminal: terminal,
+                inputParser: inputParser,
+                termSize: termSize
+            )
+        else { return }
 
         state.lastYankToAFile = name
 
@@ -622,17 +656,21 @@ struct Commands {
             return
         }
 
-        let msg = state.editPane.isHex ? "Hexa string to fill with: " : "Ascii string to fill with: "
-        let lastValue = state.editPane.isHex ? state.lastFillWithStringHexa : state.lastFillWithStringAscii
+        let msg =
+            state.editPane.isHex ? "Hexa string to fill with: " : "Ascii string to fill with: "
+        let lastValue =
+            state.editPane.isHex ? state.lastFillWithStringHexa : state.lastFillWithStringAscii
 
-        guard let input = Prompt.displayMessageAndGetString(
-            msg,
-            lastValue: lastValue,
-            state: state,
-            terminal: terminal,
-            inputParser: inputParser,
-            termSize: termSize
-        ) else { return }
+        guard
+            let input = Prompt.displayMessageAndGetString(
+                msg,
+                lastValue: lastValue,
+                state: state,
+                terminal: terminal,
+                inputParser: inputParser,
+                termSize: termSize
+            )
+        else { return }
 
         if state.editPane.isHex {
             state.lastFillWithStringHexa = input
@@ -696,50 +734,50 @@ struct Commands {
         termSize: TerminalSize
     ) {
         let helpText = """
-        HaxEdit - Hex Editor Key Bindings
+            HaxEdit - Hex Editor Key Bindings
 
-        Movement:
-          Arrows / Ctrl+F/B/N/P  Move cursor
-          Alt+F/B/N/P            Move by block/line*block
-          Ctrl+A / Home          Beginning of line
-          Ctrl+E / End           End of line
-          Ctrl+V / PgDn / F6     Page down
-          Alt+V / PgUp / F5      Page up
-          < / Alt+<              Beginning of file
-          > / Alt+>              End of file
-          Alt+L                  Recenter
+            Movement:
+              Arrows / Ctrl+F/B/N/P  Move cursor
+              Alt+F/B/N/P            Move by block/line*block
+              Ctrl+A / Home          Beginning of line
+              Ctrl+E / End           End of line
+              Ctrl+V / PgDn / F6     Page down
+              Alt+V / PgUp / F5      Page up
+              < / Alt+<              Beginning of file
+              > / Alt+>              End of file
+              Alt+L                  Recenter
 
-        Editing:
-          Tab / Ctrl+T           Toggle hex/ascii
-          Alt+Q                  Quoted insert
-          Backspace              Delete backward
-          Ctrl+U / Ctrl+_        Undo all
+            Editing:
+              Tab / Ctrl+T           Toggle hex/ascii
+              Alt+Q                  Quoted insert
+              Backspace              Delete backward
+              Ctrl+U / Ctrl+_        Undo all
 
-        File:
-          Ctrl+W / F2            Save
-          Ctrl+O / F3            Open file
-          Ctrl+G / F4 / Enter    Goto position
-          Alt+T                  Truncate
-          Ctrl+X / F10           Save & quit
-          Ctrl+Q                 Quit (no save)
+            File:
+              Ctrl+W / F2            Save
+              Ctrl+O / F3            Open file
+              Ctrl+G / F4 / Enter    Goto position
+              Alt+T                  Truncate
+              Ctrl+X / F10           Save & quit
+              Ctrl+C                 Quit (Copy if selection)
 
-        Search:
-          / / Ctrl+S             Search forward
-          Ctrl+R                 Search backward
+            Search:
+              / / Ctrl+S             Search forward
+              Ctrl+R                 Search backward
 
-        Mark/Copy:
-          Ctrl+Space / F9        Set mark
-          Ctrl+D / Alt+W / F7    Copy region
-          Ctrl+C                 Copy to system clipboard
-          Ctrl+Y / F8            Paste
-          Alt+Y / F11            Paste to file
-          F12 / Alt+I            Fill with string
+            Mark/Copy:
+              Ctrl+Space / F9        Set mark
+              Ctrl+D / Alt+W / F7    Copy region
+              Ctrl+Shift+C           Copy to system clipboard
+              Ctrl+Y / F8            Paste
+              Alt+Y / F11            Paste to file
+              F12 / Alt+I            Fill with string
 
-        Other:
-          Ctrl+Z                 Suspend
-          Ctrl+L                 Redisplay
-          F1 / Alt+H             This help
-        """
+            Other:
+              Ctrl+Z                 Suspend
+              Ctrl+L                 Redisplay
+              F1 / Alt+H             This help
+            """
 
         // Clear screen and show help
         terminal.writeString(ANSIRenderer.clearScreen)

@@ -99,7 +99,7 @@ enum ArrowDirection: Equatable {
 }
 
 /// Semantic editor actions
-enum EditorAction {
+enum EditorAction: Equatable {
     // Movement
     case forwardChar
     case backwardChar
@@ -145,6 +145,7 @@ enum EditorAction {
     case setMark
     case copyRegion
     case copyToSystemClipboard
+    case smartCopyOrQuit // Copy if selection exists, else quit
     case yank
     case yankToFile
     case fillWithString

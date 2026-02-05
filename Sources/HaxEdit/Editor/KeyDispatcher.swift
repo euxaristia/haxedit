@@ -83,12 +83,12 @@ struct KeyDispatcher {
 
         // Ctrl combos
         case .ctrl(0x00): /* Ctrl+Space */  return .setMark
-        case .ctrl(0x03): /* Ctrl+C */      return .copyToSystemClipboard
+        case .ctrl(0x03): /* Ctrl+C */      return .smartCopyOrQuit
         case .ctrl(0x04): /* Ctrl+D */      return .copyRegion
         case .ctrl(0x07): /* Ctrl+G */      return .gotoChar
         case .ctrl(0x0C): /* Ctrl+L */      return .redisplay
         case .ctrl(0x0F): /* Ctrl+O */      return .findFile
-        case .ctrl(0x11): /* Ctrl+Q */      return .quit
+        case .ctrl(0x11): /* Ctrl+Q */      return .quotedInsert
         case .ctrl(0x12): /* Ctrl+R */      return .searchBackward
         case .ctrl(0x13): /* Ctrl+S */      return .searchForward
         case .ctrl(0x14): /* Ctrl+T */      return .toggleHexAscii
