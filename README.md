@@ -51,18 +51,54 @@ haxedit [options] <filename>
 - `-h`, `--help`: Show usage.
 
 **Key Bindings:**
-- `F1` / `Ctrl+H`: Help
-- `F2` / `Ctrl+W`: Save
-- `F3` / `Ctrl+O`: Open another file
-- `Tab`: Switch between Hex and ASCII
-- `Ctrl+S` / `/`: Search forward
-- `Ctrl+R`: Search backward
-- `Ctrl+G`: Go to position
-- `Ctrl+Z`: Suspend
-- `Ctrl+C`: Quit (without saving)
-- `Ctrl+X`: Save and Quit
 
-See the in-app help (`F1`) for a full list of commands.
+*   **Movement**
+    *   `Arrows` / `Ctrl+F/B/N/P`: Move cursor
+    *   `Alt+Arrows` / `Alt+F/B/N/P`: Move by block/line
+    *   `Home` / `Ctrl+A`: Start of line
+    *   `End` / `Ctrl+E`: End of line
+    *   `PgUp` / `Alt+V` / `F5`: Page up
+    *   `PgDn` / `Ctrl+V` / `F6`: Page down
+    *   `<` / `Alt+<`: Start of file
+    *   `>` / `Alt+>`: End of file
+    *   `Alt+L`: Recenter view
+
+*   **Editing**
+    *   `Tab` / `Ctrl+T`: Toggle Hex/ASCII pane
+    *   `Backspace`: Delete backward
+    *   `Ctrl+Alt+H`: Delete backward block
+    *   `Alt+Q` / `Ctrl+Q`: Quoted insert
+    *   `Ctrl+U` / `Ctrl+_`: Undo all
+
+*   **File Operations**
+    *   `Ctrl+W` / `F2`: Save
+    *   `Ctrl+O` / `F3`: Open file
+    *   `Ctrl+G` / `F4` / `Enter`: Goto position/sector
+    *   `Alt+T`: Truncate file
+    *   `Ctrl+X` / `F10`: Save and Quit
+    *   `Ctrl+C`: Quit
+
+*   **Search**
+    *   `/` / `Ctrl+S`: Search forward
+    *   `Ctrl+R`: Search backward
+
+*   **Mark / Copy / Paste**
+    *   `Ctrl+Space` / `F9`: Set mark
+    *   `Ctrl+D` / `Alt+W` / `F7`: Copy region
+    *   `Ctrl+Shift+C`: Copy to system clipboard
+    *   `Ctrl+Y` / `F8`: Paste
+    *   `Alt+Y` / `F11`: Paste to file
+    *   `Alt+I` / `F12`: Fill with string
+
+*   **Vim-like (Hex Pane)**
+    *   `h`/`j`/`k`/`l`: Move cursor
+    *   `w`/`b`: Move by block
+    *   `v`: Set mark
+    *   `y`: Copy
+    *   `p`: Paste
+    *   `G`: End of file
+
+See the in-app help (`F1`) for details.
 
 ## Legacy
 
