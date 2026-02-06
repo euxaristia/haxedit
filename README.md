@@ -100,10 +100,6 @@ haxedit [options] <filename>
 
 See the in-app help (`F1`) for details.
 
-## Legacy
-
-The original C implementation of `hexedit` by Pascal Rigaux has been moved to the `legacy/` directory.
-
 ## License
 
 GPL (Inherited from the original project).
