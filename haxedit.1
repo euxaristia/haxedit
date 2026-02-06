@@ -31,8 +31,8 @@ Show the usage.
 .B Arrows, Ctrl+F/B/N/P
 Move the cursor.
 .TP
-.B Alt+Right/Left/Down/Up
-Move n times the cursor.
+.B Alt+Arrows, Alt+F/B/N/P
+Move by block or multiple lines.
 .TP
 .B Home, Ctrl+A
 Go to beginning of line.
@@ -51,8 +51,31 @@ Go to beginning of file.
 .TP
 .B >, Alt+>, Esc+End
 Go to end of file.
+.TP
+.B Alt+L
+Recenter view.
 
-.SS Miscellaneous
+.SS Vim-like (Hex Pane only)
+.TP
+.B h, j, k, l
+Move cursor (Left, Down, Up, Right).
+.TP
+.B w, b
+Move forward/backward by block.
+.TP
+.B v
+Set mark.
+.TP
+.B y
+Copy region.
+.TP
+.B p
+Paste.
+.TP
+.B G
+Go to end of file.
+
+.SS Miscellaneous & Editing
 .TP
 .B F2, Ctrl+W
 Save.
@@ -78,11 +101,17 @@ Exit without saving.
 .B Tab, Ctrl+T
 Toggle hex/ASCII.
 .TP
-.B Return
+.B Return, Ctrl+G, F4
 Go to position (or sector).
 .TP
-.B Backspace, Ctrl+H
-Undo previous byte modification.
+.B Backspace
+Delete backward byte.
+.TP
+.B Ctrl+Alt+H
+Delete backward block.
+.TP
+.B Alt+Q, Ctrl+Q
+Quoted insert.
 .TP
 .B Ctrl+U, Ctrl+_
 Undo all modifications.
@@ -100,6 +129,9 @@ Set mark.
 .TP
 .B Ctrl+D, Alt+W, F7
 Copy selected region.
+.TP
+.B Ctrl+Shift+C
+Copy selected region to system clipboard.
 .TP
 .B Ctrl+Y, Insert, F8
 Paste.
