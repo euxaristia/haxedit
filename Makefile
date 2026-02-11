@@ -1,16 +1,18 @@
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
-BUILD_DIR = $(shell swift build -c release --show-bin-path)
-BINARY = $(BUILD_DIR)/HaxEdit
-SOURCES = $(shell find Sources -name "*.swift")
+HCC ?= hcc
+BINARY ?= haxedit
+HOLY_ENTRY := holy/haxedit.HC
+HOLY_SOURCES := $(shell find holy -name "*.HC" 2>/dev/null)
 
 all: build
 
 build: $(BINARY)
 
 test:
-	swift test
+	@echo "No automated HolyC tests yet."
+	@echo "Run smoke checks manually in a TTY."
 
 install: $(BINARY)
 	install -d $(BINDIR)
@@ -32,19 +34,11 @@ local-uninstall:
 	rm -f $(HOME)/.local/bin/haxedit
 	rm -f $(HOME)/.local/share/man/man1/haxedit.1
 
-$(BINARY): $(SOURCES) Package.swift
-	@if [ "$$(id -u)" = "0" ]; then \
-		if [ -n "$$SUDO_USER" ]; then \
-			sudo -u "$$SUDO_USER" swift build -c release --static-swift-stdlib; \
-		else \
-			echo "Error: Cannot build as root. Please run 'make' as a regular user first."; \
-			exit 1; \
-		fi; \
-	else \
-		swift build -c release --static-swift-stdlib; \
-	fi
+$(BINARY): $(HOLY_SOURCES)
+	@command -v $(HCC) >/dev/null 2>&1 || { echo "Error: $(HCC) not found in PATH"; exit 1; }
+	$(HCC) -o $(BINARY) $(HOLY_ENTRY)
 
 clean:
-	rm -rf .build
+	rm -f $(BINARY)
 
 .PHONY: all build test install local-install uninstall local-uninstall clean

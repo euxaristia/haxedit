@@ -28,14 +28,17 @@ HaxEdit maintains the features of the original `hexedit` while providing a moder
 
 ### From Source
 
-Requirements: Swift 5.9+
+Requirements: Linux x86_64 and `hcc` (HolyC compiler)
 
 ```bash
 git clone https://github.com/euxaristia/haxedit.git
 cd haxedit
-swift build -c release
-cp .build/release/HaxEdit /usr/local/bin/haxedit
+make build
+cp ./haxedit /usr/local/bin/haxedit
 ```
+
+The previous Swift implementation is still present in `Sources/` during migration,
+but the default build now targets the HolyC Linux binary.
 
 ## Usage
 
