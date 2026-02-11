@@ -38,6 +38,8 @@ extern "c" U8 *strdup(U8 *s);
 extern "c" I64 snprintf(I8 *buf, U64 len, I8 *fmt, ...);
 extern "c" I64 system(U8 *cmd);
 extern "c" U0 *memset(U0 *ptr, I32 value, U64 num);
+extern "c" U0 *memcpy(U0 *dst, U0 *src, U64 n);
+extern "c" U0 *memmove(U0 *dst, U0 *src, U64 n);
 extern "c" I32 strcmp(U8 *s1, U8 *s2);
 extern "c" U0 exit(I32 code);
 extern "c" I32 isatty(I32 fd);
@@ -62,8 +64,15 @@ class Editor
   I64 cols;
   I64 pane;
   I64 hex_half;
+  Bool mark_on;
+  I64 mark_pos;
   Bool dirty;
   Bool quit_confirm;
+  U8 *clip;
+  I64 clip_len;
+  I64 clip_cap;
+  U8 search[256];
+  I64 search_len;
   U8 status[256];
 };
 
@@ -72,6 +81,8 @@ Editor *_G(U0)
   static Editor g_state;
   return &g_state;
 }
+
+U0 KeepVisible();
 
 U0 Die(U8 *msg)
 {
@@ -118,6 +129,19 @@ U0 WriteStr(U8 *s)
   write(1, s, strlen(s));
 }
 
+Bool IsSpace(I64 c)
+{
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
+}
+
+Bool IsHexChar(I64 c)
+{
+  if (c >= '0' && c <= '9') return TRUE;
+  if (c >= 'a' && c <= 'f') return TRUE;
+  if (c >= 'A' && c <= 'F') return TRUE;
+  return FALSE;
+}
+
 U0 EnsureCap(I64 need)
 {
   Editor *g = _G();
@@ -158,6 +182,216 @@ I64 HexVal(I64 c)
   if (c >= 'a' && c <= 'f') return c - 'a' + 10;
   if (c >= 'A' && c <= 'F') return c - 'A' + 10;
   return -1;
+}
+
+U0 EnsureClipCap(I64 need)
+{
+  Editor *g = _G();
+  if (need <= g->clip_cap) return;
+  I64 cap = 256;
+  if (g->clip_cap) cap = g->clip_cap;
+  while (cap < need) cap *= 2;
+  U8 *tmp = realloc(g->clip, cap)(U8*);
+  if (!tmp) Die("out of memory");
+  g->clip = tmp;
+  g->clip_cap = cap;
+}
+
+I64 PromptLine(U8 *label, U8 *out, I64 cap)
+{
+  I64 off = 0;
+  U8 c;
+  I64 n;
+
+  LeaveRaw();
+  WriteStr("\x1b[0m\x1b[2K\r");
+  WriteStr(label);
+
+  while (off < cap - 1) {
+    n = read(0, &c, 1);
+    if (n != 1) continue;
+    if (c == '\n' || c == '\r') break;
+    out[off++] = c;
+  }
+  out[off] = 0;
+
+  if (c != '\n' && c != '\r') {
+    while (TRUE) {
+      n = read(0, &c, 1);
+      if (n == 1 && (c == '\n' || c == '\r')) break;
+      if (n != 1) break;
+    }
+  }
+
+  EnterRaw();
+  return off;
+}
+
+I64 ParseSearchPattern(U8 *query, U8 *out, I64 cap)
+{
+  I64 i = 0;
+  I64 olen = 0;
+  Bool all_hex = TRUE;
+
+  while (query[i]) {
+    if (!IsHexChar(query[i]) && !IsSpace(query[i])) {
+      all_hex = FALSE;
+      break;
+    }
+    i++;
+  }
+
+  if (!all_hex) {
+    i = 0;
+    while (query[i] && olen < cap) {
+      out[olen++] = query[i++];
+    }
+    return olen;
+  }
+
+  I64 hi = -1;
+  i = 0;
+  while (query[i]) {
+    I64 c = query[i++];
+    if (IsSpace(c)) continue;
+    I64 v = HexVal(c);
+    if (v < 0) return -1;
+    if (hi < 0) hi = v;
+    else {
+      if (olen >= cap) return -1;
+      out[olen++] = ((hi << 4) | v);
+      hi = -1;
+    }
+  }
+
+  if (hi >= 0) return -1;
+  return olen;
+}
+
+I64 FindPattern(U8 *pat, I64 plen, I64 start, Bool forward)
+{
+  Editor *g = _G();
+  I64 i, j;
+
+  if (plen <= 0 || plen > g->len) return -1;
+
+  if (forward) {
+    if (start < 0) start = 0;
+    for (i = start; i + plen <= g->len; ++i) {
+      for (j = 0; j < plen; ++j) {
+        if (g->buf[i + j] != pat[j]) goto _next_fwd;
+      }
+      return i;
+_next_fwd:
+      ;
+    }
+    return -1;
+  }
+
+  if (start > g->len - plen) start = g->len - plen;
+  if (start < 0) return -1;
+  for (i = start; i >= 0; --i) {
+    for (j = 0; j < plen; ++j) {
+      if (g->buf[i + j] != pat[j]) goto _next_rev;
+    }
+    return i;
+_next_rev:
+    ;
+  }
+  return -1;
+}
+
+U0 DoSearch(Bool forward)
+{
+  Editor *g = _G();
+  U8 query[256];
+  U8 parsed[256];
+  U8 *prompt = "search / ";
+  if (!forward) prompt = "search ? ";
+  I64 qlen = PromptLine(prompt, query, 256);
+  I64 plen;
+  I64 pos;
+  I64 start;
+
+  if (qlen == 0) {
+    if (g->search_len <= 0) {
+      SetStatus("search: empty pattern");
+      return;
+    }
+    memcpy(parsed, g->search, g->search_len);
+    plen = g->search_len;
+  } else {
+    plen = ParseSearchPattern(query, parsed, 256);
+    if (plen <= 0) {
+      SetStatus("search: invalid pattern");
+      return;
+    }
+    memcpy(g->search, parsed, plen);
+    g->search_len = plen;
+  }
+
+  start = g->cur;
+  if (forward) start++;
+  else start--;
+  pos = FindPattern(parsed, plen, start, forward);
+
+  if (pos < 0) {
+    SetStatus("search: no match");
+    return;
+  }
+
+  g->cur = pos;
+  g->hex_half = 0;
+  KeepVisible();
+  snprintf(g->status, 255, "search: match at 0x%lx", pos);
+}
+
+U0 CopyMarkedRegion()
+{
+  Editor *g = _G();
+  I64 a, b, n;
+  if (!g->mark_on) {
+    SetStatus("copy: no mark set");
+    return;
+  }
+
+  a = g->mark_pos;
+  b = g->cur;
+  if (a > b) {
+    I64 t = a;
+    a = b;
+    b = t;
+  }
+  if (b <= a) {
+    SetStatus("copy: empty region");
+    return;
+  }
+
+  n = b - a;
+  EnsureClipCap(n);
+  memcpy(g->clip, g->buf + a, n);
+  g->clip_len = n;
+  snprintf(g->status, 255, "copied %ld bytes", n);
+}
+
+U0 PasteClipboard()
+{
+  Editor *g = _G();
+  if (g->clip_len <= 0) {
+    SetStatus("paste: clipboard empty");
+    return;
+  }
+
+  EnsureCap(g->len + g->clip_len);
+  if (g->cur < g->len) {
+    memmove(g->buf + g->cur + g->clip_len, g->buf + g->cur, g->len - g->cur);
+  }
+  memcpy(g->buf + g->cur, g->clip, g->clip_len);
+  g->len += g->clip_len;
+  g->cur += g->clip_len;
+  g->dirty = TRUE;
+  g->hex_half = 0;
+  snprintf(g->status, 255, "pasted %ld bytes", g->clip_len);
 }
 
 U0 MoveCursor(I64 delta)
@@ -341,21 +575,25 @@ U0 DrawScreen()
   U8 tmp[512];
   U8 *pane_name;
   U8 *dirty_text;
+  U8 *mark_text;
   RefreshSize();
 
   WriteStr("\x1b[?25l\x1b[H");
 
   pane_name = "HEX";
   if (g->pane == PANE_ASCII) pane_name = "ASCII";
+  mark_text = "off";
+  if (g->mark_on) mark_text = "on";
   dirty_text = "";
   if (g->dirty) dirty_text = "[modified]";
 
   snprintf(tmp, 511,
-    "\x1b[1m%s\x1b[0m  len=%ld  cur=0x%lx  pane=%s  %s\r\n",
+    "\x1b[1m%s\x1b[0m  len=%ld  cur=0x%lx  pane=%s  mark=%s  %s\r\n",
     g->path,
     g->len,
     g->cur,
     pane_name,
+    mark_text,
     dirty_text);
   WriteStr(tmp);
 
@@ -411,6 +649,39 @@ U0 ProcessKey(I64 k, Bool *running)
     g->quit_confirm = FALSE;
     if (g->pane == PANE_HEX) SetStatus("pane: HEX");
     else SetStatus("pane: ASCII");
+    return;
+  }
+
+  if (k == '/') {
+    DoSearch(TRUE);
+    return;
+  }
+
+  if (k == 18) {
+    DoSearch(FALSE);
+    return;
+  }
+
+  if (k == 'v' || k == 0) {
+    if (!g->mark_on) {
+      g->mark_on = TRUE;
+      g->mark_pos = g->cur;
+      snprintf(g->status, 255, "mark set at 0x%lx", g->mark_pos);
+    } else {
+      g->mark_on = FALSE;
+      SetStatus("mark cleared");
+    }
+    return;
+  }
+
+  if (k == 'y' || k == 4) {
+    CopyMarkedRegion();
+    return;
+  }
+
+  if (k == 'p') {
+    PasteClipboard();
+    KeepVisible();
     return;
   }
 
@@ -494,7 +765,6 @@ I32 Main(I32 argc, U8 **argv)
   LeaveRaw();
   WriteStr("\x1b[0m\x1b[2J\x1b[H\x1b[?25h");
 
-  if (g->buf) free(g->buf);
-  if (g->path) free(g->path);
+  /* Keep process-exit cleanup minimal; allocator interop can vary across hcc/libc builds. */
   return 0;
 }
