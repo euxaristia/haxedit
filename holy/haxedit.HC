@@ -22,6 +22,11 @@
 #define PANE_ASCII 1
 
 #define TIOCGWINSZ 0x5413
+#define UNDO_MAX 256
+#define UNDO_DATA_MAX 4096
+
+#define UNDO_OP_OVERWRITE 1
+#define UNDO_OP_INSERT    2
 
 extern "c" I32 open(U8 *name, I32 flags, ...);
 extern "c" I32 close(I32 fd);
@@ -30,6 +35,7 @@ extern "c" I64 write(I32 fd, U0 *buf, U64 nbyte);
 extern "c" I64 lseek(I32 fd, I64 offset, I32 whence);
 extern "c" I32 ioctl(I32 fd, U64 request, ...);
 extern "c" I64 strlen(U8 *s);
+extern "c" I32 strncmp(U8 *s1, U8 *s2, U64 n);
 extern "c" U8 *strcpy(U8 *dst, U8 *src);
 extern "c" U0 *malloc(U64 size);
 extern "c" U0 *realloc(U0 *ptr, U64 size);
@@ -43,6 +49,7 @@ extern "c" U0 *memmove(U0 *dst, U0 *src, U64 n);
 extern "c" I32 strcmp(U8 *s1, U8 *s2);
 extern "c" U0 exit(I32 code);
 extern "c" I32 isatty(I32 fd);
+extern "c" I64 strtoll(U8 *nptr, U8 **endptr, I64 base);
 
 class WinSize
 {
@@ -50,6 +57,16 @@ class WinSize
   U16 col;
   U16 xpixel;
   U16 ypixel;
+};
+
+class UndoEntry
+{
+  I64 op;
+  I64 pos;
+  I64 old_len;
+  I64 new_len;
+  U8 old_data[UNDO_DATA_MAX];
+  U8 new_data[UNDO_DATA_MAX];
 };
 
 class Editor
@@ -62,8 +79,11 @@ class Editor
   I64 top;
   I64 rows;
   I64 cols;
+  I64 bpl;
+  Bool bpl_auto;
   I64 pane;
   I64 hex_half;
+  Bool readonly;
   Bool mark_on;
   I64 mark_pos;
   Bool dirty;
@@ -71,6 +91,9 @@ class Editor
   U8 *clip;
   I64 clip_len;
   I64 clip_cap;
+  UndoEntry undo[UNDO_MAX];
+  I64 undo_len;
+  I64 undo_idx;
   U8 search[256];
   I64 search_len;
   U8 status[256];
@@ -83,6 +106,149 @@ Editor *_G(U0)
 }
 
 U0 KeepVisible();
+U0 SetStatus(U8 *msg);
+U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
+U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
+
+U0 PushUndoOverwrite(I64 pos, U8 old_b, U8 new_b)
+{
+  Editor *g = _G();
+  UndoEntry *e;
+  I64 i;
+
+  if (old_b == new_b) return;
+
+  if (g->undo_idx < g->undo_len) {
+    g->undo_len = g->undo_idx;
+  }
+
+  if (g->undo_len >= UNDO_MAX) {
+    for (i = 1; i < g->undo_len; ++i) {
+      memcpy(&g->undo[i - 1], &g->undo[i], sizeof(UndoEntry));
+    }
+    g->undo_len--;
+    if (g->undo_idx > 0) g->undo_idx--;
+  }
+
+  e = &g->undo[g->undo_len++];
+  e->op = UNDO_OP_OVERWRITE;
+  e->pos = pos;
+  e->old_len = 1;
+  e->new_len = 1;
+  e->old_data[0] = old_b;
+  e->new_data[0] = new_b;
+  g->undo_idx = g->undo_len;
+}
+
+U0 PushUndoInsert(I64 pos, U8 *bytes, I64 n)
+{
+  Editor *g = _G();
+  UndoEntry *e;
+  I64 i;
+
+  if (n <= 0) return;
+  if (n > UNDO_DATA_MAX) {
+    SetStatus("undo: insert too large to track");
+    return;
+  }
+
+  if (g->undo_idx < g->undo_len) {
+    g->undo_len = g->undo_idx;
+  }
+
+  if (g->undo_len >= UNDO_MAX) {
+    for (i = 1; i < g->undo_len; ++i) {
+      memcpy(&g->undo[i - 1], &g->undo[i], sizeof(UndoEntry));
+    }
+    g->undo_len--;
+    if (g->undo_idx > 0) g->undo_idx--;
+  }
+
+  e = &g->undo[g->undo_len++];
+  e->op = UNDO_OP_INSERT;
+  e->pos = pos;
+  e->old_len = 0;
+  e->new_len = n;
+  memcpy(e->new_data, bytes, n);
+  g->undo_idx = g->undo_len;
+}
+
+U0 UndoOnce()
+{
+  Editor *g = _G();
+  UndoEntry *e;
+
+  if (g->undo_idx <= 0) {
+    SetStatus("undo: no more actions");
+    return;
+  }
+
+  e = &g->undo[g->undo_idx - 1];
+  if (e->op == UNDO_OP_OVERWRITE) {
+    if (e->pos < g->len) {
+      SetByteAt(e->pos, e->old_data[0], FALSE);
+      g->cur = e->pos;
+    }
+  } else if (e->op == UNDO_OP_INSERT) {
+    if (e->pos >= 0 && e->pos + e->new_len <= g->len) {
+      memmove(g->buf + e->pos, g->buf + e->pos + e->new_len, g->len - (e->pos + e->new_len));
+      g->len -= e->new_len;
+      g->cur = e->pos;
+      if (g->cur > g->len) g->cur = g->len;
+      g->dirty = TRUE;
+    }
+  }
+
+  g->undo_idx--;
+  g->hex_half = 0;
+  KeepVisible();
+  SetStatus("undo");
+}
+
+U0 RedoOnce()
+{
+  Editor *g = _G();
+  UndoEntry *e;
+
+  if (g->undo_idx >= g->undo_len) {
+    SetStatus("redo: no more actions");
+    return;
+  }
+
+  e = &g->undo[g->undo_idx];
+  if (e->op == UNDO_OP_OVERWRITE) {
+    if (e->pos < g->len) {
+      SetByteAt(e->pos, e->new_data[0], FALSE);
+      g->cur = e->pos;
+    }
+  } else if (e->op == UNDO_OP_INSERT) {
+    InsertBytes(e->pos, e->new_data, e->new_len, FALSE);
+    g->cur = e->pos + e->new_len;
+  }
+
+  g->undo_idx++;
+  g->hex_half = 0;
+  KeepVisible();
+  SetStatus("redo");
+}
+
+Bool StartsWith(U8 *s, U8 *prefix)
+{
+  U64 n = strlen(prefix);
+  return strncmp(s, prefix, n) == 0;
+}
+
+U0 RecalcBpl()
+{
+  Editor *g = _G();
+  if (!g->bpl_auto) return;
+
+  I64 usable = g->cols - 15;
+  I64 bpl = usable / 4;
+  if (bpl < 4) bpl = 4;
+  if (bpl > 64) bpl = 64;
+  g->bpl = bpl;
+}
 
 U0 Die(U8 *msg)
 {
@@ -163,17 +329,36 @@ U0 AppendByte(U8 b)
   g->dirty = TRUE;
 }
 
-U0 SetByteAt(I64 idx, U8 b)
+U0 SetByteAt(I64 idx, U8 b, Bool track_undo)
 {
   Editor *g = _G();
   if (idx < g->len) {
+    U8 old_b = g->buf[idx];
     g->buf[idx] = b;
     g->dirty = TRUE;
+    if (track_undo) PushUndoOverwrite(idx, old_b, b);
     return;
   }
   if (idx == g->len) {
-    AppendByte(b);
+    InsertBytes(idx, &b, 1, track_undo);
   }
+}
+
+U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo)
+{
+  Editor *g = _G();
+  if (n <= 0) return;
+  if (pos < 0) pos = 0;
+  if (pos > g->len) pos = g->len;
+
+  EnsureCap(g->len + n);
+  if (pos < g->len) {
+    memmove(g->buf + pos + n, g->buf + pos, g->len - pos);
+  }
+  memcpy(g->buf + pos, data, n);
+  g->len += n;
+  g->dirty = TRUE;
+  if (track_undo) PushUndoInsert(pos, data, n);
 }
 
 I64 HexVal(I64 c)
@@ -382,16 +567,41 @@ U0 PasteClipboard()
     return;
   }
 
-  EnsureCap(g->len + g->clip_len);
-  if (g->cur < g->len) {
-    memmove(g->buf + g->cur + g->clip_len, g->buf + g->cur, g->len - g->cur);
-  }
-  memcpy(g->buf + g->cur, g->clip, g->clip_len);
-  g->len += g->clip_len;
+  InsertBytes(g->cur, g->clip, g->clip_len, TRUE);
   g->cur += g->clip_len;
-  g->dirty = TRUE;
   g->hex_half = 0;
   snprintf(g->status, 255, "pasted %ld bytes", g->clip_len);
+}
+
+U0 GotoOffsetPrompt()
+{
+  Editor *g = _G();
+  U8 query[128];
+  U8 *end = NULL;
+  I64 base = 10;
+  I64 off;
+
+  if (PromptLine("goto offset: ", query, 128) <= 0) {
+    SetStatus("goto: cancelled");
+    return;
+  }
+
+  if (query[0] == '0' && (query[1] == 'x' || query[1] == 'X')) {
+    base = 16;
+  }
+
+  off = strtoll(query, &end, base);
+  if (end == query || *end != 0) {
+    SetStatus("goto: invalid number");
+    return;
+  }
+  if (off < 0) off = 0;
+  if (off > g->len) off = g->len;
+
+  g->cur = off;
+  g->hex_half = 0;
+  KeepVisible();
+  snprintf(g->status, 255, "goto: 0x%lx", off);
 }
 
 U0 MoveCursor(I64 delta)
@@ -407,7 +617,7 @@ U0 MoveCursor(I64 delta)
 U0 KeepVisible()
 {
   Editor *g = _G();
-  I64 bpl = 16;
+  I64 bpl = g->bpl;
   I64 vrows = 1;
   if (g->rows > 2) vrows = g->rows - 2;
   I64 first = g->top / bpl;
@@ -460,6 +670,10 @@ U0 OpenFile(U8 *path)
 U0 SaveFile()
 {
   Editor *g = _G();
+  if (g->readonly) {
+    SetStatus("readonly: save disabled");
+    return;
+  }
   I32 fd = open(g->path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (fd == -1) {
     SetStatus("save failed: open");
@@ -536,7 +750,7 @@ U0 DrawLine(I64 off)
   WriteStr(tmp);
 
   I64 i;
-  for (i = 0; i < 16; ++i) {
+  for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     if (idx < g->len) {
       Bool sel = (idx == g->cur && g->pane == PANE_HEX);
@@ -553,7 +767,7 @@ U0 DrawLine(I64 off)
 
   WriteStr(" |");
 
-  for (i = 0; i < 16; ++i) {
+  for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     U8 ch = ' ';
     Bool sel = FALSE;
@@ -566,7 +780,7 @@ U0 DrawLine(I64 off)
     write(1, &ch, 1);
     if (sel) WriteStr("\x1b[0m");
   }
-  WriteStr("|\r\n");
+  WriteStr("|\x1b[K\r\n");
 }
 
 U0 DrawScreen()
@@ -576,7 +790,9 @@ U0 DrawScreen()
   U8 *pane_name;
   U8 *dirty_text;
   U8 *mark_text;
+  U8 *ro_text;
   RefreshSize();
+  RecalcBpl();
 
   WriteStr("\x1b[?25l\x1b[H");
 
@@ -584,16 +800,20 @@ U0 DrawScreen()
   if (g->pane == PANE_ASCII) pane_name = "ASCII";
   mark_text = "off";
   if (g->mark_on) mark_text = "on";
+  ro_text = "";
+  if (g->readonly) ro_text = "[RO]";
   dirty_text = "";
   if (g->dirty) dirty_text = "[modified]";
 
   snprintf(tmp, 511,
-    "\x1b[1m%s\x1b[0m  len=%ld  cur=0x%lx  pane=%s  mark=%s  %s\r\n",
+    "\x1b[1m%s\x1b[0m  len=%ld  cur=0x%lx  bpl=%ld  pane=%s  mark=%s  %s %s\r\n",
     g->path,
     g->len,
     g->cur,
+    g->bpl,
     pane_name,
     mark_text,
+    ro_text,
     dirty_text);
   WriteStr(tmp);
 
@@ -601,11 +821,12 @@ U0 DrawScreen()
   if (g->rows > 2) vrows = g->rows - 2;
   I64 r;
   for (r = 0; r < vrows; ++r) {
-    I64 off = g->top + r * 16;
-    if (off < g->len || off == (g->cur & ~15)) {
+    I64 off = g->top + r * g->bpl;
+    I64 crow_base = (g->cur / g->bpl) * g->bpl;
+    if (off < g->len || off == crow_base) {
       DrawLine(off);
     } else {
-      WriteStr("~\r\n");
+      WriteStr("~\x1b[K\r\n");
     }
   }
 
@@ -613,7 +834,7 @@ U0 DrawScreen()
   if (strlen(g->status) > 0) {
     WriteStr(g->status);
   } else {
-    WriteStr("Ctrl+S save | Ctrl+Q quit | Tab pane | Arrows/HJKL move");
+    WriteStr("Ctrl+S save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/p mark-copy-paste");
   }
   WriteStr("\x1b[0m\x1b[K");
 }
@@ -621,10 +842,28 @@ U0 DrawScreen()
 U0 ProcessKey(I64 k, Bool *running)
 {
   Editor *g = _G();
-  I64 bpl = 16;
+  I64 bpl = g->bpl;
   I64 page_rows = 1;
   if (g->rows > 2) page_rows = (g->rows - 2);
   I64 page = page_rows * bpl;
+
+  if (k == 24) {
+    SaveFile();
+    if (!g->dirty) {
+      *running = FALSE;
+    }
+    return;
+  }
+
+  if (k == 3) {
+    if (g->dirty && !g->quit_confirm) {
+      g->quit_confirm = TRUE;
+      SetStatus("unsaved changes: press Ctrl+C again to quit");
+      return;
+    }
+    *running = FALSE;
+    return;
+  }
 
   if (k == 17) {
     if (g->dirty && !g->quit_confirm) {
@@ -680,8 +919,35 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == 'p') {
+    if (g->readonly) {
+      SetStatus("readonly: cannot paste");
+      return;
+    }
     PasteClipboard();
     KeepVisible();
+    return;
+  }
+
+  if (k == 'g' || k == 7) {
+    GotoOffsetPrompt();
+    return;
+  }
+
+  if (k == 'u' || k == 26) {
+    if (g->readonly) {
+      SetStatus("readonly: cannot undo");
+      return;
+    }
+    UndoOnce();
+    return;
+  }
+
+  if (k == 'U' || k == 25) {
+    if (g->readonly) {
+      SetStatus("readonly: cannot redo");
+      return;
+    }
+    RedoOnce();
     return;
   }
 
@@ -697,22 +963,30 @@ U0 ProcessKey(I64 k, Bool *running)
     if (g->pane == PANE_HEX) {
       I64 v = HexVal(k);
       if (v >= 0) {
+        if (g->readonly) {
+          SetStatus("readonly: cannot edit");
+          return;
+        }
         if (g->cur == g->len) AppendByte(0);
         U8 b = g->buf[g->cur];
         if (!g->hex_half) {
           b = ((v << 4) | (b & 15));
-          SetByteAt(g->cur, b);
+          SetByteAt(g->cur, b, TRUE);
           g->hex_half = 1;
         } else {
           b = ((b & 0xF0) | v);
-          SetByteAt(g->cur, b);
+          SetByteAt(g->cur, b, TRUE);
           g->hex_half = 0;
           MoveCursor(1);
         }
       }
     } else {
       if (k >= 32 && k <= 126) {
-        SetByteAt(g->cur, k);
+        if (g->readonly) {
+          SetStatus("readonly: cannot edit");
+          return;
+        }
+        SetByteAt(g->cur, k, TRUE);
         MoveCursor(1);
       }
     }
@@ -728,28 +1002,87 @@ U0 InitEditor(U8 *path)
   memset(g, 0, sizeof(Editor));
   OpenFile(path);
   g->pane = PANE_HEX;
+  g->bpl = 16;
+  g->bpl_auto = TRUE;
+  g->readonly = FALSE;
   g->top = 0;
   g->cur = 0;
   g->hex_half = 0;
   g->dirty = FALSE;
   g->quit_confirm = FALSE;
-  SetStatus("Ctrl+S save | Ctrl+Q quit | Tab pane | Arrows/HJKL move");
+  SetStatus("Ctrl+S save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/p mark-copy-paste");
 }
 
 I32 Main(I32 argc, U8 **argv)
 {
   Editor *g = _G();
-  if (argc != 2) {
-    "usage: %s <file>\n", argv[0];
+  U8 *file = NULL;
+  I64 req_bpl = 16;
+  Bool req_auto = TRUE;
+  Bool req_readonly = FALSE;
+  I32 i = 1;
+
+  while (i < argc) {
+    U8 *arg = argv[i];
+    if (!strcmp(arg, "-h") || !strcmp(arg, "--help")) {
+      "usage: %s [options] <file>\n", argv[0];
+      "  -r, --readonly       open read-only\n";
+      "  -s, --sector         set line length to 32\n";
+      "  -m, --maximize       auto line length from terminal width\n";
+      "  -lN, --linelength N  set line length\n";
+      return 0;
+    } else if (!strcmp(arg, "-r") || !strcmp(arg, "--readonly")) {
+      req_readonly = TRUE;
+    } else if (!strcmp(arg, "-s") || !strcmp(arg, "--sector")) {
+      req_bpl = 32;
+      req_auto = FALSE;
+    } else if (!strcmp(arg, "-m") || !strcmp(arg, "--maximize")) {
+      req_auto = TRUE;
+    } else if (!strcmp(arg, "--color")) {
+      /* ANSI color is currently always enabled; accept for CLI compatibility. */
+    } else if (StartsWith(arg, "-l") && strlen(arg) > 2) {
+      U8 *end = NULL;
+      I64 n = strtoll(arg + 2, &end, 10);
+      if (end == arg + 2 || *end != 0 || n < 4 || n > 64) {
+        "invalid line length\n";
+        return 1;
+      }
+      req_bpl = n;
+      req_auto = FALSE;
+    } else if (!strcmp(arg, "--linelength")) {
+      U8 *end = NULL;
+      I64 n;
+      i++;
+      if (i >= argc) {
+        "missing value for --linelength\n";
+        return 1;
+      }
+      n = strtoll(argv[i], &end, 10);
+      if (end == argv[i] || *end != 0 || n < 4 || n > 64) {
+        "invalid line length\n";
+        return 1;
+      }
+      req_bpl = n;
+      req_auto = FALSE;
+    } else if (arg[0] == '-') {
+      "unknown option: %s\n", arg;
+      return 1;
+    } else {
+      file = arg;
+      break;
+    }
+    i++;
+  }
+
+  if (!file || i + 1 != argc) {
+    "usage: %s [options] <file>\n", argv[0];
     return 1;
   }
 
-  if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
-    "usage: %s <file>\n", argv[0];
-    return 0;
-  }
-
-  InitEditor(argv[1]);
+  InitEditor(file);
+  g->bpl = req_bpl;
+  g->bpl_auto = req_auto;
+  g->readonly = req_readonly;
 
   WriteStr("\x1b[2J\x1b[H");
   EnterRaw();
