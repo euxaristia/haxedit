@@ -1,8 +1,8 @@
 # #️⃣ HaxEdit
 
-A modern, pure Swift reimplementation of the classic [HexEdit](http://rigaux.org/hexedit.html) tool.
+A modern HolyC reimplementation of the classic [HexEdit](http://rigaux.org/hexedit.html) tool.
 
-HaxEdit maintains the features of the original `hexedit` while providing a modern, maintainable codebase and type safety.
+HaxEdit maintains the features of the original `hexedit` while providing a modern, maintainable codebase.
 
 ## Features
 
@@ -15,7 +15,7 @@ HaxEdit maintains the features of the original `hexedit` while providing a moder
 - **Editing**:
     - Modify bytes in Hex or ASCII mode.
     - Insert/Delete bytes (with shift).
-    - Undo/Redo support.
+    - Undo support.
     - Cut, Copy, Paste (internal clipboard).
     - Fill selection with pattern.
 - **Display**:
@@ -37,8 +37,7 @@ make build
 cp ./haxedit /usr/local/bin/haxedit
 ```
 
-The previous Swift implementation is still present in `Sources/` during migration,
-but the default build now targets the HolyC Linux binary.
+The repository now ships a HolyC-only implementation targeting Linux.
 
 ## Usage
 
@@ -50,6 +49,7 @@ haxedit [options] <filename>
 - `-s`, `--sector`: Sector layout with fixed 16-byte lines.
 - `-m`, `--maximize`: Maximize the display.
 - `-l<n>`, `--linelength <n>`: Explicitly set the number of bytes to display per line.
+- `-r`, `--readonly`: Open file in read-only mode.
 - `--color`: Display colors (if supported).
 - `-h`, `--help`: Show usage.
 
@@ -102,6 +102,22 @@ haxedit [options] <filename>
     *   `G`: End of file
 
 See the in-app help (`F1`) for details.
+
+## Testing
+
+Run the automated PTY smoke checks:
+
+```bash
+make smoke
+```
+
+This validates key-dispatch parity scenarios in normal and sector mode and fails on regressions.
+
+The `test` target now runs the same smoke suite:
+
+```bash
+make test
+```
 
 ## License
 

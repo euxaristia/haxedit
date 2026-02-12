@@ -3,7 +3,7 @@
 haxedit \- view and edit files in hexadecimal or in ASCII
 .SH SYNOPSIS
 .B haxedit
-[\-s | \-\-sector] [\-m | \-\-maximize] [\-l<n> | \-\-linelength <n>] [\-\-color] [\-h | \-\-help] [filename]
+[\-s | \-\-sector] [\-m | \-\-maximize] [\-l<n> | \-\-linelength <n>] [\-r | \-\-readonly] [\-\-color] [\-h | \-\-help] [filename]
 .SH DESCRIPTION
 .B haxedit
 shows a file both in ASCII and in hexadecimal. The file can be a device as the file is read a piece at a time. You can modify the file and search through it.
@@ -18,6 +18,9 @@ Try to maximize the display.
 .TP
 .B \-\-color
 Display colors.
+.TP
+.B \-r, \-\-readonly
+Open file in read-only mode.
 .TP
 .B \-l<n>, \-\-linelength <n>
 Explicitly set the number of bytes to display per line to <n>.
@@ -147,4 +150,4 @@ Truncate file at current position.
 
 .SH AUTHORS
 Original \fBhexedit\fR by Pascal Rigaux <pixel@rigaux.org>.
-\fBhaxedit\fR rewrite in Swift by euxaristia.
+\fBhaxedit\fR HolyC rewrite by euxaristia.
