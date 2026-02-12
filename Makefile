@@ -25,7 +25,7 @@ smoke: $(BINARY)
 	@bash -lc './$(BINARY) -l-1 >/tmp/haxedit-ll-neg.out 2>&1; test $$? -ne 0' || { echo "Smoke failed: negative -l should fail"; exit 1; }
 	@rg -q -- "invalid line length" /tmp/haxedit-ll-neg.out || { echo "Smoke failed: negative -l missing error text"; exit 1; }
 	@printf '\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff' > /tmp/haxedit-smoke.bin
-	@timeout 0.4 ./$(BINARY) -l1 /tmp/haxedit-smoke.bin >/dev/null 2>/dev/null; code=$$?; [ "$$code" -eq 124 ] || { echo "Smoke failed: -l1 should be accepted"; exit 1; }
+	@timeout 0.4 ./$(BINARY) -l1 /tmp/haxedit-smoke.bin </dev/null >/dev/null 2>/dev/null; code=$$?; [ "$$code" -eq 124 ] || { echo "Smoke failed: -l1 should be accepted"; exit 1; }
 	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-readonly.bin
 	@bash -lc '{ sleep 0.15; printf "\003"; } | script -q -c "./$(BINARY) -r /tmp/haxedit-readonly.bin" /tmp/haxedit-readonly.log' >/dev/null
 	@xxd -p -l 1 /tmp/haxedit-readonly.bin | rg -q -- "^00$$" || { echo "Smoke failed: readonly mode unexpectedly changed file"; exit 1; }
@@ -47,7 +47,7 @@ smoke: $(BINARY)
 	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-save-quit.bin
 	@bash -lc '{ printf "f"; sleep 0.15; printf "\030"; } | script -q -c "./$(BINARY) /tmp/haxedit-save-quit.bin" /tmp/haxedit-save-quit.log' >/dev/null
 	@xxd -p -l 1 /tmp/haxedit-save-quit.bin | rg -q -- "^f0$$" || { echo "Smoke failed: Ctrl+X save+quit did not persist edit"; exit 1; }
-	@timeout 0.4 ./$(BINARY) --linelength 0 /tmp/haxedit-smoke.bin >/dev/null 2>/dev/null; code=$$?; [ "$$code" -eq 124 ] || { echo "Smoke failed: --linelength 0 should enter editor (auto mode)"; exit 1; }
+	@timeout 0.4 ./$(BINARY) --linelength 0 /tmp/haxedit-smoke.bin </dev/null >/dev/null 2>/dev/null; code=$$?; [ "$$code" -eq 124 ] || { echo "Smoke failed: --linelength 0 should enter editor (auto mode)"; exit 1; }
 	@cp /tmp/haxedit-smoke.bin /tmp/-haxedit-smoke.bin
 	@bash -lc '{ sleep 0.15; printf "\003"; } | script -q -c "./$(BINARY) -- /tmp/-haxedit-smoke.bin" /tmp/haxedit-dashfile.log' >/dev/null
 	@strings /tmp/haxedit-dashfile.log | rg -q -- "--0x0/0x10--0%" || { echo "Smoke failed: -- terminator did not open dash-prefixed file"; exit 1; }
