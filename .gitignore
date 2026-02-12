@@ -1,6 +1,2 @@
 .build/
-.swiftpm/
-Package.resolved
-*.xcodeproj/
-*.xcworkspace/
 haxedit

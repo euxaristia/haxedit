@@ -1,6 +1,23 @@
 # HolyC Smoke Tests
 
-Quick TTY checks for key-dispatch parity while migrating from Swift.
+Quick TTY checks for key-dispatch and behavior parity.
+
+## Automated
+
+- Run `make smoke`
+- Expected output: `Smoke OK`
+- `make test` runs the same smoke suite
+- Includes checks for:
+  - CLI parsing (`--help`, invalid/negative line lengths, `--` terminator, `--linelength 0`, `-l1`)
+  - Readonly-mode edit blocking
+  - Dirty-buffer open-file guard (`Ctrl+O` cancel and save-then-open paths)
+  - Clipboard persistence across open-file (`Ctrl+O`) transitions
+  - `>`, `<`, `G`, and `Enter` goto offset
+  - Search forward/reverse (`/`, `Ctrl+R`)
+  - Sector-mode goto/navigation (`Enter`, `Alt+F`, `Ctrl+V`)
+  - CSI-modifier compatibility (`Alt+Right` via `CSI 1;3C`, `Ctrl+Alt+H` via `CSI u`)
+  - `--color` byte-class highlights
+  - Vim-key scope parity (hex-pane `w`, ASCII-pane literal `y/h/p/u` inserts)
 
 ## Prereqs
 

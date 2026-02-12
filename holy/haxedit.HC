@@ -109,6 +109,7 @@ class Editor
   I64 pane;
   I64 hex_half;
   Bool readonly;
+  Bool colored;
   Bool mark_on;
   I64 mark_pane;
   I64 mark_pos;
@@ -150,8 +151,19 @@ U0 TruncateFilePrompt();
 U0 CopyMarkedRegionToSystemClipboard();
 U0 DeleteBackwardBytes(I64 n);
 U0 SuspendEditor();
+U0 SaveFile();
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
+U0 MoveCursorAndKeepVisible(I64 delta);
+U0 JumpToAbsolute(I64 pos);
+U0 JumpToLineStart(I64 bpl);
+U0 JumpToLineEnd(I64 bpl);
+U0 RecenterOnCursor(I64 bpl);
+U0 HandleMouseKey();
+U8 *ColorSeqForByte(U8 b);
+U8 *BaseName(U8 *path);
+U0 WriteLineFd(I32 fd, U8 *s);
+U0 PrintUsage(I32 fd, U8 *prog);
 
 U0 PushUndoOverwrite(I64 pos, U8 old_b, U8 new_b)
 {
@@ -289,7 +301,10 @@ U0 RecalcBpl()
   I64 usable = g->cols - 15;
   I64 bpl = usable / 4;
   if (bpl < 4) bpl = 4;
-  if (bpl > 64) bpl = 64;
+  /* Original behavior keeps maximize line length block-aligned. */
+  bpl = (bpl / 4) * 4;
+  if (bpl < 4) bpl = 4;
+  if (bpl > 4096) bpl = 4096;
   g->bpl = bpl;
 }
 
@@ -297,8 +312,8 @@ U0 Die(U8 *msg)
 {
   write(1,"\x1b[0m\x1b[2J\x1b[H\x1b[?25h",18);
   if (isatty(0)) system("stty sane 2>/dev/null");
-  msg;
-  "\n";
+  write(2, msg, strlen(msg));
+  write(2, "\n", 1);
   exit(1);
 }
 
@@ -597,7 +612,7 @@ U0 CopyMarkedRegion()
     return;
   }
 
-  n = b - a;
+  n = (b - a) + 1;
   EnsureClipCap(n);
   memcpy(g->clip, g->buf + a, n);
   g->clip_len = n;
@@ -684,11 +699,33 @@ U0 OpenFilePrompt()
 {
   Editor *g = _G();
   U8 path[512];
+  U8 yn[16];
   I32 fd;
   Bool keep_readonly;
+  Bool keep_colored;
+  U8 *keep_clip;
+  I64 keep_clip_len;
+  I64 keep_clip_cap;
   I64 keep_bpl;
   Bool keep_bpl_auto;
   Bool keep_sector_mode;
+
+  if (g->dirty) {
+    if (PromptLine("unsaved changes: save before open? (y/N/c): ", yn, 16) <= 0) {
+      SetStatus("open: cancelled");
+      return;
+    }
+    if (yn[0] == 'y' || yn[0] == 'Y') {
+      SaveFile();
+      if (g->dirty) {
+        SetStatus("open: save failed");
+        return;
+      }
+    } else if (yn[0] == 'c' || yn[0] == 'C') {
+      SetStatus("open: cancelled");
+      return;
+    }
+  }
 
   if (PromptLine("file name: ", path, 512) <= 0) {
     SetStatus("open: cancelled");
@@ -703,11 +740,19 @@ U0 OpenFilePrompt()
   close(fd);
 
   keep_readonly = g->readonly;
+  keep_colored = g->colored;
+  keep_clip = g->clip;
+  keep_clip_len = g->clip_len;
+  keep_clip_cap = g->clip_cap;
   keep_bpl = g->bpl;
   keep_bpl_auto = g->bpl_auto;
   keep_sector_mode = g->sector_mode;
   InitEditor(path);
   g->readonly = keep_readonly;
+  g->colored = keep_colored;
+  g->clip = keep_clip;
+  g->clip_len = keep_clip_len;
+  g->clip_cap = keep_clip_cap;
   g->bpl = keep_bpl;
   g->bpl_auto = keep_bpl_auto;
   g->sector_mode = keep_sector_mode;
@@ -726,7 +771,7 @@ U0 ShowHelp()
   WriteStr("Mark/Copy/Paste: v set mark, y copy, Ctrl+Y paste\r\n");
   WriteStr("File: Ctrl+O open, Ctrl+W save, Ctrl+X save+quit, Ctrl+C quit, Enter goto (sector in -s)\r\n");
   WriteStr("Pane: Tab or Ctrl+T toggle hex/ascii\r\n");
-  WriteStr("Undo/Redo: u or Ctrl+U/Ctrl+_ undo, U redo, Ctrl+Z suspend\r\n");
+  WriteStr("Undo: Ctrl+U/Ctrl+_ ; Suspend: Ctrl+Z\r\n");
   WriteStr("Function keys: F2 save, F3 open, F4 goto, F5/F6 page, F7/F8 copy/paste, F9 mark, F10 save+quit\r\n");
   WriteStr("\r\nPress any key to return...");
   ReadKey();
@@ -850,7 +895,7 @@ U0 FillMarkedRegionPrompt()
     return;
   }
 
-  n = b - a;
+  n = (b - a) + 1;
   for (i = 0; i < n; ++i) {
     g->buf[a + i] = pat[i % plen];
   }
@@ -976,7 +1021,7 @@ U0 CopyMarkedRegionToSystemClipboard()
     return;
   }
 
-  n = b - a;
+  n = (b - a) + 1;
   if (g->pane == PANE_HEX) {
     tmp = malloc(n * 3)(U8*);
     if (!tmp) {
@@ -1075,6 +1120,143 @@ U0 KeepVisible()
   } else if (crow > last) {
     g->top = (crow - vrows + 1) * bpl;
   }
+}
+
+U0 MoveCursorAndKeepVisible(I64 delta)
+{
+  MoveCursor(delta);
+  KeepVisible();
+}
+
+U0 JumpToAbsolute(I64 pos)
+{
+  Editor *g = _G();
+  if (pos < 0) pos = 0;
+  if (pos > g->len) pos = g->len;
+  g->cur = pos;
+  g->hex_half = 0;
+  KeepVisible();
+}
+
+U0 JumpToLineStart(I64 bpl)
+{
+  Editor *g = _G();
+  g->cur = (g->cur / bpl) * bpl;
+  g->hex_half = 0;
+  KeepVisible();
+}
+
+U0 JumpToLineEnd(I64 bpl)
+{
+  Editor *g = _G();
+  I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
+  if (line_end > g->len) line_end = g->len;
+  g->cur = line_end;
+  g->hex_half = 0;
+  KeepVisible();
+}
+
+U0 RecenterOnCursor(I64 bpl)
+{
+  Editor *g = _G();
+  g->top = (g->cur / bpl) * bpl;
+  KeepVisible();
+}
+
+U0 HandleMouseKey()
+{
+  Editor *g = _G();
+  I64 row, col, hex_start, ascii_start, idx, pane, line_idx, off, loc;
+
+  if (g->mouse_kind < 0) return;
+
+  row = g->mouse_row;
+  col = g->mouse_col;
+  hex_start = 10;
+  ascii_start = hex_start + 3 * g->bpl + 2;
+  idx = -1;
+  pane = g->pane;
+
+  if (row < 0 || row >= g->rows - 1) return;
+
+  if (col >= hex_start && col < hex_start + 3 * g->bpl) {
+    idx = (col - hex_start) / 3;
+    pane = PANE_HEX;
+  } else if (col >= ascii_start && col < ascii_start + g->bpl) {
+    idx = col - ascii_start;
+    pane = PANE_ASCII;
+  } else {
+    return;
+  }
+
+  line_idx = row;
+  off = g->top + line_idx * g->bpl;
+  loc = off + idx;
+  if (loc < 0) loc = 0;
+  if (loc > g->len) loc = g->len;
+
+  g->pane = pane;
+  g->cur = loc;
+  g->hex_half = 0;
+  KeepVisible();
+
+  if (g->mouse_kind == 0) {
+    /* Press: arm drag selection, but do not create one yet. */
+    g->mouse_down = TRUE;
+    g->mouse_start_pos = loc;
+    g->mouse_start_pane = pane;
+    g->mark_on = FALSE;
+  } else if (g->mouse_kind == 1) {
+    if (!g->mouse_down) return;
+    /* Drag: create/extend selection from press point. */
+    if (!g->mark_on) {
+      g->mark_on = TRUE;
+      g->mark_pane = g->mouse_start_pane;
+      g->mark_pos = g->mouse_start_pos;
+    }
+  } else if (g->mouse_kind == 2) {
+    /* Release: stop extending selection. */
+    g->mouse_down = FALSE;
+    if (g->mark_on && g->cur == g->mark_pos) {
+      /* Click without drag should leave no selection highlight. */
+      g->mark_on = FALSE;
+    }
+  }
+}
+
+U8 *ColorSeqForByte(U8 b)
+{
+  if (b == 0) return "\x1b[31m";           /* null */
+  if (b < 32 || b == 127) return "\x1b[32m"; /* control */
+  if (b > 127) return "\x1b[34m";          /* extended */
+  return "";
+}
+
+U0 WriteLineFd(I32 fd, U8 *s)
+{
+  write(fd, s, strlen(s));
+}
+
+U0 PrintUsage(I32 fd, U8 *prog)
+{
+  U8 line[512];
+  U8 *bn = BaseName(prog);
+  snprintf(line, 511, "usage: %s [options] <file>\n", bn);
+  WriteLineFd(fd, line);
+  WriteLineFd(fd, "  -r, --readonly       open read-only\n");
+  WriteLineFd(fd, "  -s, --sector         sector layout (fixed 16-byte lines)\n");
+  WriteLineFd(fd, "  -m, --maximize       auto line length from terminal width\n");
+  WriteLineFd(fd, "  -lN, --linelength N  set line length (0 = auto)\n");
+  WriteLineFd(fd, "  --color              enable byte-class color highlights\n");
+  WriteLineFd(fd, "  -h, --help           show this help\n");
+}
+
+Bool IsCtrlAltHCode(I64 code)
+{
+  if (code == 8) return TRUE;    /* Ctrl-H */
+  if (code == 72) return TRUE;   /* 'H' */
+  if (code == 104) return TRUE;  /* 'h' */
+  return FALSE;
 }
 
 U0 OpenFile(U8 *path)
@@ -1233,6 +1415,25 @@ I64 ReadKey()
             I64 code_u = params[0];
             I64 mod_u = params[1];
             if (mod_u == 6 && (code_u == 67 || code_u == 99)) return K_CTRL_SHIFT_C;
+            if (mod_u == 7 && IsCtrlAltHCode(code_u)) return K_ALT_BASE + 8; /* Ctrl+Alt+H */
+          }
+          return K_ESC;
+        }
+        if (ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D' || ch == 'H' || ch == 'F') {
+          I64 mod = 1;
+          if (pcount >= 2) mod = params[1];
+          if (mod == 3) {
+            if (ch == 'A') return K_ALT_ARROW_UP;
+            if (ch == 'B') return K_ALT_ARROW_DOWN;
+            if (ch == 'C') return K_ALT_ARROW_RIGHT;
+            if (ch == 'D') return K_ALT_ARROW_LEFT;
+          } else {
+            if (ch == 'A') return K_ARROW_UP;
+            if (ch == 'B') return K_ARROW_DOWN;
+            if (ch == 'C') return K_ARROW_RIGHT;
+            if (ch == 'D') return K_ARROW_LEFT;
+            if (ch == 'H') return K_HOME;
+            if (ch == 'F') return K_END;
           }
           return K_ESC;
         }
@@ -1240,6 +1441,7 @@ I64 ReadKey()
           I64 code = params[0];
           if (code == 27 && pcount >= 3) {
             if (params[1] == 6 && (params[2] == 67 || params[2] == 99)) return K_CTRL_SHIFT_C;
+            if (params[1] == 7 && IsCtrlAltHCode(params[2])) return K_ALT_BASE + 8;
           }
           if (code == 1 || code == 7) return K_HOME;
           if (code == 2) return K_INSERT;
@@ -1333,7 +1535,7 @@ U0 DrawLine(I64 off)
       Bool marked = FALSE;
       Bool active_sel = (idx == g->cur && g->pane == PANE_HEX);
       Bool ghost_sel = (idx == g->cur && g->pane == PANE_ASCII);
-      if (have_sel && idx >= sel_min && idx < sel_max) marked = TRUE;
+      if (have_sel && idx >= sel_min && idx <= sel_max) marked = TRUE;
       Bool active_mark = marked && sel_pane == PANE_HEX;
       Bool ghost_mark = marked && sel_pane == PANE_ASCII;
       I64 hv = g->buf[idx] & 0xFF;
@@ -1343,6 +1545,10 @@ U0 DrawLine(I64 off)
         snprintf(tmp, 255, "\x1b[7m%02x\x1b[0m ", hv);
       } else if (ghost_sel || ghost_mark) {
         snprintf(tmp, 255, "\x1b[2m%02x\x1b[0m ", hv);
+      } else if (g->colored) {
+        U8 *cseq = ColorSeqForByte(g->buf[idx]);
+        if (cseq[0]) snprintf(tmp, 255, "%s%02x\x1b[0m ", cseq, hv);
+        else snprintf(tmp, 255, "%02x ", hv);
       } else {
         snprintf(tmp, 255, "%02x ", hv);
       }
@@ -1357,6 +1563,7 @@ U0 DrawLine(I64 off)
   for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     U8 ch = ' ';
+    Bool colored_style = FALSE;
     Bool marked = FALSE;
     Bool active_sel = FALSE;
     Bool ghost_sel = FALSE;
@@ -1364,7 +1571,7 @@ U0 DrawLine(I64 off)
       ch = PrintCh(g->buf[idx]);
       active_sel = (idx == g->cur && g->pane == PANE_ASCII);
       ghost_sel = (idx == g->cur && g->pane == PANE_HEX);
-      if (have_sel && idx >= sel_min && idx < sel_max) marked = TRUE;
+      if (have_sel && idx >= sel_min && idx <= sel_max) marked = TRUE;
     }
     Bool active_mark = marked && sel_pane == PANE_ASCII;
     Bool ghost_mark = marked && sel_pane == PANE_HEX;
@@ -1372,8 +1579,15 @@ U0 DrawLine(I64 off)
     if (active_sel) WriteStr("\x1b[7m");
     else if (active_mark) WriteStr("\x1b[7m");
     else if (ghost_sel || ghost_mark) WriteStr("\x1b[2m");
+    else if (g->colored && idx < g->len) {
+      U8 *cseq = ColorSeqForByte(g->buf[idx]);
+      if (cseq[0]) {
+        WriteStr(cseq);
+        colored_style = TRUE;
+      }
+    }
     write(1, &ch, 1);
-    if (active_sel || active_mark || ghost_sel || ghost_mark) WriteStr("\x1b[0m");
+    if (active_sel || active_mark || ghost_sel || ghost_mark || colored_style) WriteStr("\x1b[0m");
   }
   WriteStr("|\x1b[K\r\n");
 }
@@ -1494,61 +1708,7 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == K_MOUSE) {
-    if (g->mouse_kind < 0) return;
-
-    I64 row = g->mouse_row;
-    I64 col = g->mouse_col;
-    I64 hex_start = 10;
-    I64 ascii_start = hex_start + 3 * g->bpl + 2;
-    I64 idx = -1;
-    I64 pane = g->pane;
-    I64 line_idx, off, loc;
-
-    if (row < 0 || row >= g->rows - 1) return;
-
-    if (col >= hex_start && col < hex_start + 3 * g->bpl) {
-      idx = (col - hex_start) / 3;
-      pane = PANE_HEX;
-    } else if (col >= ascii_start && col < ascii_start + g->bpl) {
-      idx = col - ascii_start;
-      pane = PANE_ASCII;
-    } else {
-      return;
-    }
-
-    line_idx = row;
-    off = g->top + line_idx * g->bpl;
-    loc = off + idx;
-    if (loc < 0) loc = 0;
-    if (loc > g->len) loc = g->len;
-
-    g->pane = pane;
-    g->cur = loc;
-    g->hex_half = 0;
-    KeepVisible();
-
-    if (g->mouse_kind == 0) {
-      /* Press: arm drag selection, but do not create one yet. */
-      g->mouse_down = TRUE;
-      g->mouse_start_pos = loc;
-      g->mouse_start_pane = pane;
-      g->mark_on = FALSE;
-    } else if (g->mouse_kind == 1) {
-      if (!g->mouse_down) return;
-      /* Drag: create/extend selection from press point. */
-      if (!g->mark_on) {
-        g->mark_on = TRUE;
-        g->mark_pane = g->mouse_start_pane;
-        g->mark_pos = g->mouse_start_pos;
-      }
-    } else if (g->mouse_kind == 2) {
-      /* Release: stop extending selection. */
-      g->mouse_down = FALSE;
-      if (g->mark_on && g->cur == g->mark_pos) {
-        /* Click without drag should leave no selection highlight. */
-        g->mark_on = FALSE;
-      }
-    }
+    HandleMouseKey();
     return;
   }
 
@@ -1607,8 +1767,8 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == K_F5) { MoveCursor(-page); KeepVisible(); return; }
-  if (k == K_F6) { MoveCursor(page); KeepVisible(); return; }
+  if (k == K_F5) { MoveCursorAndKeepVisible(-page); return; }
+  if (k == K_F6) { MoveCursorAndKeepVisible(page); return; }
   if (k == K_F7) { CopyMarkedRegion(); return; }
   if (k == K_F8) {
     PasteClipboardAtCursor();
@@ -1673,42 +1833,32 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == K_ALT_BASE + 'v' || k == K_ALT_BASE + 'V') {
-    MoveCursor(-page);
-    KeepVisible();
+    MoveCursorAndKeepVisible(-page);
     return;
   }
 
   if (k == K_ALT_BASE + '<') {
-    g->cur = 0;
-    g->hex_half = 0;
-    KeepVisible();
+    JumpToAbsolute(0);
     return;
   }
 
   if (k == '<') {
-    g->cur = 0;
-    g->hex_half = 0;
-    KeepVisible();
+    JumpToAbsolute(0);
     return;
   }
 
   if (k == K_ALT_BASE + '>') {
-    g->cur = g->len;
-    g->hex_half = 0;
-    KeepVisible();
+    JumpToAbsolute(g->len);
     return;
   }
 
   if (k == '>') {
-    g->cur = g->len;
-    g->hex_half = 0;
-    KeepVisible();
+    JumpToAbsolute(g->len);
     return;
   }
 
   if (k == K_ALT_BASE + 'l' || k == K_ALT_BASE + 'L') {
-    g->top = (g->cur / bpl) * bpl;
-    KeepVisible();
+    RecenterOnCursor(bpl);
     SetStatus("recenter");
     return;
   }
@@ -1723,7 +1873,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'y' || k == 4) {
+  if (k == 4 || (k == 'y' && g->pane == PANE_HEX)) {
     CopyMarkedRegion();
     return;
   }
@@ -1743,7 +1893,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'p' || k == 25) {
+  if (k == 25 || (k == 'p' && g->pane == PANE_HEX)) {
     PasteClipboardAtCursor();
     return;
   }
@@ -1789,7 +1939,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'u' || k == 21 || k == 31) {
+  if (k == 21 || k == 31) {
     if (g->readonly) {
       SetStatus("readonly: cannot undo");
       return;
@@ -1803,49 +1953,40 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'U') {
-    if (g->readonly) {
-      SetStatus("readonly: cannot redo");
-      return;
-    }
-    RedoOnce();
-    return;
-  }
-
   if (k == 'G' && g->pane == PANE_HEX) {
-    g->cur = g->len;
-    g->hex_half = 0;
-    KeepVisible();
+    JumpToAbsolute(g->len);
     return;
   }
 
-  if (k == 6) { MoveCursor(1); KeepVisible(); return; }      /* Ctrl+F */
-  if (k == 2) { MoveCursor(-1); KeepVisible(); return; }     /* Ctrl+B */
-  if (k == 14) { MoveCursor(bpl); KeepVisible(); return; }   /* Ctrl+N */
-  if (k == 16) { MoveCursor(-bpl); KeepVisible(); return; }  /* Ctrl+P */
-  if (k == K_ALT_ARROW_RIGHT) { MoveCursor(bloc); KeepVisible(); return; }
-  if (k == K_ALT_ARROW_LEFT) { MoveCursor(-bloc); KeepVisible(); return; }
-  if (k == K_ALT_ARROW_DOWN) { MoveCursor(bloc * bpl); KeepVisible(); return; }
-  if (k == K_ALT_ARROW_UP) { MoveCursor(-bloc * bpl); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursor(bloc); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursor(-bloc); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursor(bloc * bpl); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursor(-bloc * bpl); KeepVisible(); return; }
-  if (k == 1) { g->cur = (g->cur / bpl) * bpl; g->hex_half = 0; KeepVisible(); return; }  /* Ctrl+A */
-  if (k == 5) {                                                 /* Ctrl+E */
-    I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
-    if (line_end > g->len) line_end = g->len;
-    g->cur = line_end;
-    g->hex_half = 0;
-    KeepVisible();
+  if (k == 'w' && g->pane == PANE_HEX) {
+    MoveCursorAndKeepVisible(bloc);
     return;
   }
-  if (k == 22) { MoveCursor(page); KeepVisible(); return; }  /* Ctrl+V */
+  if (k == 'b' && g->pane == PANE_HEX) {
+    MoveCursorAndKeepVisible(-bloc);
+    return;
+  }
 
-  if (k == K_ARROW_LEFT || k == 'h') MoveCursor(-1);
-  else if (k == K_ARROW_RIGHT || k == 'l') MoveCursor(1);
-  else if (k == K_ARROW_UP || k == 'k') MoveCursor(-bpl);
-  else if (k == K_ARROW_DOWN || k == 'j') MoveCursor(bpl);
+  if (k == 6) { MoveCursorAndKeepVisible(1); return; }      /* Ctrl+F */
+  if (k == 2) { MoveCursorAndKeepVisible(-1); return; }     /* Ctrl+B */
+  if (k == 14) { MoveCursorAndKeepVisible(bpl); return; }   /* Ctrl+N */
+  if (k == 16) { MoveCursorAndKeepVisible(-bpl); return; }  /* Ctrl+P */
+  if (k == K_ALT_ARROW_RIGHT) { MoveCursorAndKeepVisible(bloc); return; }
+  if (k == K_ALT_ARROW_LEFT) { MoveCursorAndKeepVisible(-bloc); return; }
+  if (k == K_ALT_ARROW_DOWN) { MoveCursorAndKeepVisible(bloc * bpl); return; }
+  if (k == K_ALT_ARROW_UP) { MoveCursorAndKeepVisible(-bloc * bpl); return; }
+  if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursorAndKeepVisible(bloc); return; }
+  if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursorAndKeepVisible(-bloc); return; }
+  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursorAndKeepVisible(bloc * bpl); return; }
+  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursorAndKeepVisible(-bloc * bpl); return; }
+  if (k == 1) { JumpToLineStart(bpl); return; }  /* Ctrl+A */
+  if (k == 5) { JumpToLineEnd(bpl); return; }    /* Ctrl+E */
+  if (k == 22) { MoveCursorAndKeepVisible(page); return; }  /* Ctrl+V */
+
+  if (k == K_ARROW_LEFT || (k == 'h' && g->pane == PANE_HEX)) MoveCursor(-1);
+  else if (k == K_ARROW_RIGHT || (k == 'l' && g->pane == PANE_HEX)) MoveCursor(1);
+  else if (k == K_ARROW_UP || (k == 'k' && g->pane == PANE_HEX)) MoveCursor(-bpl);
+  else if (k == K_ARROW_DOWN || (k == 'j' && g->pane == PANE_HEX)) MoveCursor(bpl);
   else if (k == K_PAGE_UP) MoveCursor(-page);
   else if (k == K_PAGE_DOWN) MoveCursor(page);
   else if (k == K_HOME) {
@@ -1904,6 +2045,7 @@ U0 InitEditor(U8 *path)
   g->bpl = 16;
   g->bpl_auto = TRUE;
   g->readonly = FALSE;
+  g->colored = FALSE;
   g->top = 0;
   g->cur = 0;
   g->hex_half = 0;
@@ -1920,18 +2062,19 @@ I32 Main(I32 argc, U8 **argv)
   I64 req_bpl = 16;
   Bool req_auto = TRUE;
   Bool req_readonly = FALSE;
+  Bool req_colored = FALSE;
   Bool req_sector_mode = FALSE;
   I32 i = 1;
 
   while (i < argc) {
     U8 *arg = argv[i];
     if (!strcmp(arg, "-h") || !strcmp(arg, "--help")) {
-      "usage: %s [options] <file>\n", argv[0];
-      "  -r, --readonly       open read-only\n";
-      "  -s, --sector         sector layout (fixed 16-byte lines)\n";
-      "  -m, --maximize       auto line length from terminal width\n";
-      "  -lN, --linelength N  set line length\n";
+      PrintUsage(1, argv[0]);
       return 0;
+    } else if (!strcmp(arg, "--")) {
+      i++;
+      if (i < argc) file = argv[i];
+      break;
     } else if (!strcmp(arg, "-r") || !strcmp(arg, "--readonly")) {
       req_readonly = TRUE;
     } else if (!strcmp(arg, "-s") || !strcmp(arg, "--sector")) {
@@ -1942,33 +2085,44 @@ I32 Main(I32 argc, U8 **argv)
       req_auto = TRUE;
       req_sector_mode = FALSE;
     } else if (!strcmp(arg, "--color")) {
-      /* ANSI color is currently always enabled; accept for CLI compatibility. */
+      req_colored = TRUE;
     } else if (StartsWith(arg, "-l") && strlen(arg) > 2) {
       U8 *end = NULL;
       I64 n = strtoll(arg + 2, &end, 10);
-      if (end == arg + 2 || *end != 0 || n < 4 || n > 64) {
-        "invalid line length\n";
+      if (end == arg + 2 || *end != 0 || n < 0 || n > 4096) {
+        WriteLineFd(2, "invalid line length\n");
         return 1;
       }
-      req_bpl = n;
-      req_auto = FALSE;
+      if (n == 0) {
+        req_auto = TRUE;
+      } else {
+        req_bpl = n;
+        req_auto = FALSE;
+      }
     } else if (!strcmp(arg, "--linelength")) {
       U8 *end = NULL;
       I64 n;
       i++;
       if (i >= argc) {
-        "missing value for --linelength\n";
+        WriteLineFd(2, "missing value for --linelength\n");
         return 1;
       }
       n = strtoll(argv[i], &end, 10);
-      if (end == argv[i] || *end != 0 || n < 4 || n > 64) {
-        "invalid line length\n";
+      if (end == argv[i] || *end != 0 || n < 0 || n > 4096) {
+        WriteLineFd(2, "invalid line length\n");
         return 1;
       }
-      req_bpl = n;
-      req_auto = FALSE;
+      if (n == 0) {
+        req_auto = TRUE;
+      } else {
+        req_bpl = n;
+        req_auto = FALSE;
+      }
     } else if (arg[0] == '-') {
-      "unknown option: %s\n", arg;
+      U8 emsg[512];
+      snprintf(emsg, 511, "unknown option: %s\n", arg);
+      WriteLineFd(2, emsg);
+      PrintUsage(2, argv[0]);
       return 1;
     } else {
       file = arg;
@@ -1978,7 +2132,7 @@ I32 Main(I32 argc, U8 **argv)
   }
 
   if (file && i + 1 != argc) {
-    "usage: %s [options] <file>\n", argv[0];
+    PrintUsage(2, argv[0]);
     return 1;
   }
 
@@ -1993,7 +2147,7 @@ I32 Main(I32 argc, U8 **argv)
     }
     prompted_file[off] = 0;
     if (off <= 0) {
-      "no file provided\n";
+      WriteLineFd(2, "no file provided\n");
       return 1;
     }
     file = prompted_file;
@@ -2001,13 +2155,14 @@ I32 Main(I32 argc, U8 **argv)
 
   InitEditor(file);
   if (req_sector_mode) {
-    /* Match Swift/original behavior: sector layout uses fixed 16-byte lines. */
+    /* Match original behavior: sector layout uses fixed 16-byte lines. */
     req_bpl = 16;
     req_auto = FALSE;
   }
   g->bpl = req_bpl;
   g->bpl_auto = req_auto;
   g->readonly = req_readonly;
+  g->colored = req_colored;
   g->sector_mode = req_sector_mode;
 
   WriteStr("\x1b[2J\x1b[H");
