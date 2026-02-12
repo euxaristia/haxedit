@@ -131,6 +131,8 @@ U0 KeepVisible();
 U0 SetStatus(U8 *msg);
 U0 WriteStr(U8 *s);
 U0 InitEditor(U8 *path);
+U0 ShowHelp();
+I64 ReadKey();
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -662,6 +664,24 @@ U0 OpenFilePrompt()
   SetStatus("opened file");
 }
 
+U0 ShowHelp()
+{
+  WriteStr("\x1b[2J\x1b[H");
+  WriteStr("HaxEdit Help\r\n");
+  WriteStr("\r\n");
+  WriteStr("Movement: Arrows, h/j/k/l, PgUp/PgDn, Home/End\r\n");
+  WriteStr("Edit: type in hex/ascii pane, Ctrl+Q quoted insert\r\n");
+  WriteStr("Search: / or Ctrl+S forward, Ctrl+R backward\r\n");
+  WriteStr("Mark/Copy/Paste: v set mark, y copy, Ctrl+Y paste\r\n");
+  WriteStr("File: Ctrl+O open, Ctrl+W save, Ctrl+X save+quit, Ctrl+C quit\r\n");
+  WriteStr("Pane: Tab or Ctrl+T toggle hex/ascii\r\n");
+  WriteStr("Undo/Redo: u or Ctrl+U/Ctrl+Z/Ctrl+_ undo, U redo\r\n");
+  WriteStr("Function keys: F2 save, F3 open, F4 goto, F5/F6 page, F7/F8 copy/paste, F9 mark, F10 save+quit\r\n");
+  WriteStr("\r\nPress any key to return...");
+  ReadKey();
+  SetStatus("help");
+}
+
 U0 MoveCursor(I64 delta)
 {
   Editor *g = _G();
@@ -1137,6 +1157,11 @@ U0 ProcessKey(I64 k, Bool *running)
   if (k == K_F2) {
     SaveFile();
     g->quit_confirm = FALSE;
+    return;
+  }
+
+  if (k == K_F1) {
+    ShowHelp();
     return;
   }
 
