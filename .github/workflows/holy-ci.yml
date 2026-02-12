@@ -1,0 +1,30 @@
+name: HolyC CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-smoke:
+    name: Build And Smoke
+    runs-on: [self-hosted, linux, x64, holyc]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain Check
+        run: |
+          command -v hcc
+          command -v script
+          command -v strings
+          command -v rg
+          command -v xxd
+
+      - name: Build
+        run: make build
+
+      - name: Smoke
+        run: make smoke

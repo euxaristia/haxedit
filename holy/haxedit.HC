@@ -70,6 +70,7 @@ extern "c" U0 *memset(U0 *ptr, I32 value, U64 num);
 extern "c" U0 *memcpy(U0 *dst, U0 *src, U64 n);
 extern "c" U0 *memmove(U0 *dst, U0 *src, U64 n);
 extern "c" I32 strcmp(U8 *s1, U8 *s2);
+extern "c" U8 *getenv(U8 *name);
 extern "c" U0 exit(I32 code);
 extern "c" I32 isatty(I32 fd);
 extern "c" I64 strtoll(U8 *nptr, U8 **endptr, I64 base);
@@ -160,6 +161,7 @@ U0 JumpToLineStart(I64 bpl);
 U0 JumpToLineEnd(I64 bpl);
 U0 RecenterOnCursor(I64 bpl);
 U0 HandleMouseKey();
+I64 ViewBpl();
 U8 *ColorSeqForByte(U8 b);
 U8 *BaseName(U8 *path);
 U0 WriteLineFd(I32 fd, U8 *s);
@@ -298,14 +300,26 @@ U0 RecalcBpl()
   Editor *g = _G();
   if (!g->bpl_auto) return;
 
-  I64 usable = g->cols - 15;
+  /* Split layout width: "AAAAAAAA  " + hex(3*bpl) + " |" + ascii(bpl) + "|" */
+  I64 usable = g->cols - 13;
   I64 bpl = usable / 4;
-  if (bpl < 4) bpl = 4;
-  /* Original behavior keeps maximize line length block-aligned. */
-  bpl = (bpl / 4) * 4;
   if (bpl < 4) bpl = 4;
   if (bpl > 4096) bpl = 4096;
   g->bpl = bpl;
+}
+
+I64 ViewBpl()
+{
+  Editor *g = _G();
+  I64 bpl;
+
+  if (g->pane == PANE_ASCII && !g->sector_mode) {
+    /* Wide ASCII reader layout: use nearly full terminal width for text. */
+    bpl = g->cols - 12;
+    if (bpl < 4) bpl = 4;
+    return bpl;
+  }
+  return g->bpl;
 }
 
 U0 Die(U8 *msg)
@@ -983,9 +997,12 @@ U8 *Base64Encode(U8 *src, I64 n, I64 *out_len)
 Bool SetSystemClipboardBytes(U8 *data, I64 n)
 {
   U8 *enc;
+  U8 *force_fail;
   I64 enc_len = 0;
 
   if (!data || n <= 0) return FALSE;
+  force_fail = getenv("HAXEDIT_TEST_CLIPBOARD_FAIL");
+  if (force_fail && !strcmp(force_fail, "1")) return FALSE;
 
   enc = Base64Encode(data, n, &enc_len);
   if (!enc) return FALSE;
@@ -1108,7 +1125,7 @@ U0 MoveCursor(I64 delta)
 U0 KeepVisible()
 {
   Editor *g = _G();
-  I64 bpl = g->bpl;
+  I64 bpl = ViewBpl();
   I64 vrows = 1;
   if (g->rows > 2) vrows = g->rows - 2;
   I64 first = g->top / bpl;
@@ -1166,23 +1183,29 @@ U0 RecenterOnCursor(I64 bpl)
 U0 HandleMouseKey()
 {
   Editor *g = _G();
-  I64 row, col, hex_start, ascii_start, idx, pane, line_idx, off, loc;
+  I64 row, col, bpl, hex_start, ascii_start, idx, pane, line_idx, off, loc;
+  Bool ascii_wide = FALSE;
 
   if (g->mouse_kind < 0) return;
 
   row = g->mouse_row;
   col = g->mouse_col;
+  bpl = ViewBpl();
   hex_start = 10;
-  ascii_start = hex_start + 3 * g->bpl + 2;
+  ascii_start = hex_start + 3 * bpl + 2;
+  if (g->pane == PANE_ASCII && !g->sector_mode) {
+    ascii_wide = TRUE;
+    ascii_start = 11;
+  }
   idx = -1;
   pane = g->pane;
 
   if (row < 0 || row >= g->rows - 1) return;
 
-  if (col >= hex_start && col < hex_start + 3 * g->bpl) {
+  if (!ascii_wide && col >= hex_start && col < hex_start + 3 * bpl) {
     idx = (col - hex_start) / 3;
     pane = PANE_HEX;
-  } else if (col >= ascii_start && col < ascii_start + g->bpl) {
+  } else if (col >= ascii_start && col < ascii_start + bpl) {
     idx = col - ascii_start;
     pane = PANE_ASCII;
   } else {
@@ -1190,7 +1213,7 @@ U0 HandleMouseKey()
   }
 
   line_idx = row;
-  off = g->top + line_idx * g->bpl;
+  off = g->top + line_idx * bpl;
   loc = off + idx;
   if (loc < 0) loc = 0;
   if (loc > g->len) loc = g->len;
@@ -1506,6 +1529,7 @@ U0 DrawLine(I64 off)
 {
   Editor *g = _G();
   U8 tmp[256];
+  I64 bpl = ViewBpl();
   I64 sel_min = 0;
   I64 sel_max = -1;
   Bool have_sel = FALSE;
@@ -1528,8 +1552,41 @@ U0 DrawLine(I64 off)
   snprintf(tmp, 255, "%08lx  ", off);
   WriteStr(tmp);
 
+  if (g->pane == PANE_ASCII && !g->sector_mode) {
+    I64 i;
+    WriteStr("|");
+    for (i = 0; i < bpl; ++i) {
+      I64 idx = off + i;
+      U8 ch = ' ';
+      Bool marked = FALSE;
+      Bool active_sel = FALSE;
+      Bool ghost_sel = FALSE;
+      if (idx < g->len) {
+        ch = PrintCh(g->buf[idx]);
+        active_sel = (idx == g->cur && g->pane == PANE_ASCII);
+        ghost_sel = (idx == g->cur && g->pane == PANE_HEX);
+        if (have_sel && idx >= sel_min && idx <= sel_max) marked = TRUE;
+      }
+      Bool active_mark = marked && sel_pane == PANE_ASCII;
+      Bool ghost_mark = marked && sel_pane == PANE_HEX;
+      if (active_sel) WriteStr("\x1b[7m");
+      else if (active_mark) WriteStr("\x1b[7m");
+      else if (ghost_sel || ghost_mark) WriteStr("\x1b[2m");
+      else if (g->colored && idx < g->len) {
+        U8 *cseq = ColorSeqForByte(g->buf[idx]);
+        if (cseq[0]) WriteStr(cseq);
+      }
+      write(1, &ch, 1);
+      if (active_sel || active_mark || ghost_sel || ghost_mark || (g->colored && idx < g->len)) {
+        WriteStr("\x1b[0m");
+      }
+    }
+    WriteStr("|\x1b[K\r\n");
+    return;
+  }
+
   I64 i;
-  for (i = 0; i < g->bpl; ++i) {
+  for (i = 0; i < bpl; ++i) {
     I64 idx = off + i;
     if (idx < g->len) {
       Bool marked = FALSE;
@@ -1560,7 +1617,7 @@ U0 DrawLine(I64 off)
 
   WriteStr(" |");
 
-  for (i = 0; i < g->bpl; ++i) {
+  for (i = 0; i < bpl; ++i) {
     I64 idx = off + i;
     U8 ch = ' ';
     Bool colored_style = FALSE;
@@ -1606,6 +1663,7 @@ U0 DrawScreen()
   I64 pad_right;
   RefreshSize();
   RecalcBpl();
+  I64 bpl = ViewBpl();
 
   WriteStr("\x1b[?25l\x1b[H");
 
@@ -1622,8 +1680,8 @@ U0 DrawScreen()
   if (g->rows > 1) vrows = g->rows - 1;
   I64 r;
   for (r = 0; r < vrows; ++r) {
-    I64 off = g->top + r * g->bpl;
-    I64 crow_base = (g->cur / g->bpl) * g->bpl;
+    I64 off = g->top + r * bpl;
+    I64 crow_base = (g->cur / bpl) * bpl;
     if (off < g->len || off == crow_base) {
       DrawLine(off);
     } else {
@@ -1697,7 +1755,7 @@ U0 QuotedInsertAtCursor()
 U0 ProcessKey(I64 k, Bool *running)
 {
   Editor *g = _G();
-  I64 bpl = g->bpl;
+  I64 bpl = ViewBpl();
   I64 bloc = 4;
   I64 page_rows = 1;
   if (g->rows > 2) page_rows = (g->rows - 2);
