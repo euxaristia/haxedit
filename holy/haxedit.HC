@@ -398,6 +398,10 @@ U0 EnsureCap(I64 need)
 U0 AppendByte(U8 b)
 {
   Editor *g = _G();
+  if (g->readonly) {
+    SetStatus("readonly: cannot edit");
+    return;
+  }
   EnsureCap(g->len + 1);
   g->buf[g->len++] = b;
   g->dirty = TRUE;
@@ -406,6 +410,10 @@ U0 AppendByte(U8 b)
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo)
 {
   Editor *g = _G();
+  if (g->readonly) {
+    SetStatus("readonly: cannot edit");
+    return;
+  }
   if (idx < g->len) {
     U8 old_b = g->buf[idx];
     g->buf[idx] = b;
@@ -421,6 +429,10 @@ U0 SetByteAt(I64 idx, U8 b, Bool track_undo)
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo)
 {
   Editor *g = _G();
+  if (g->readonly) {
+    SetStatus("readonly: cannot edit");
+    return;
+  }
   if (n <= 0) return;
   if (pos < 0) pos = 0;
   if (pos > g->len) pos = g->len;
@@ -851,6 +863,11 @@ U0 FillMarkedRegionPrompt()
   U8 pat[256];
   U8 *label;
   I64 ilen;
+
+  if (g->readonly) {
+    SetStatus("readonly: cannot fill");
+    return;
+  }
   I64 plen = 0;
   I64 a, b, n, i;
 
