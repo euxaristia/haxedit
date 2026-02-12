@@ -119,6 +119,9 @@ The `test` target now runs the same smoke suite:
 make test
 ```
 
+GitHub Actions CI is configured in `.github/workflows/holy-ci.yml` and expects a
+self-hosted runner labeled `holyc` with `hcc` and smoke-test prerequisites installed.
+
 ## License
 
 GPL (Inherited from the original project).

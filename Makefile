@@ -65,6 +65,15 @@ smoke: $(BINARY)
 	@strings /tmp/haxedit-search-fwd.log | rg -q -- "--0x3/0x10--20%" || { echo "Smoke failed: forward search did not land on expected offset"; exit 1; }
 	@bash -lc '{ printf ">"; sleep 0.1; printf "\022"; sleep 0.1; printf "11\r"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-smoke.bin" /tmp/haxedit-search-rev.log' >/dev/null
 	@strings /tmp/haxedit-search-rev.log | rg -q -- "--0x1/0x10--6%" || { echo "Smoke failed: reverse search did not land on expected offset"; exit 1; }
+	@bash -lc '{ printf "\r0x3\r"; sleep 0.1; printf "/"; sleep 0.1; printf "0\r"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-smoke.bin" /tmp/haxedit-search-invalid.log' >/dev/null
+	@strings /tmp/haxedit-search-invalid.log | rg -q -- "--0x3/0x10--20%" || { echo "Smoke failed: invalid search pattern changed cursor unexpectedly"; exit 1; }
+	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-trunc-invalid.bin
+	@bash -lc '{ printf "\033t"; sleep 0.1; printf "xyz\r"; sleep 0.2; printf "\030"; } | script -q -c "./$(BINARY) /tmp/haxedit-trunc-invalid.bin" /tmp/haxedit-trunc-invalid.log' >/dev/null
+	@stat -c%s /tmp/haxedit-trunc-invalid.bin | rg -q -- "^16$$" || { echo "Smoke failed: invalid truncate input changed file size"; exit 1; }
+	@xxd -p -l 2 /tmp/haxedit-trunc-invalid.bin | rg -q -- "^0011$$" || { echo "Smoke failed: invalid truncate input changed file contents"; exit 1; }
+	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-clip-fail.bin
+	@bash -lc '{ printf "\006"; sleep 0.1; printf "v"; sleep 0.1; printf "\006"; sleep 0.1; printf "\033[99;6u"; sleep 0.2; printf "\003"; } | script -q -c "env HAXEDIT_TEST_CLIPBOARD_FAIL=1 ./$(BINARY) /tmp/haxedit-clip-fail.bin" /tmp/haxedit-clip-fail.log' >/dev/null
+	@xxd -p -l 2 /tmp/haxedit-clip-fail.bin | rg -q -- "^0011$$" || { echo "Smoke failed: system clipboard failure path caused unexpected data mutation"; exit 1; }
 	@bash -lc '{ printf "\033[1;3C"; sleep 0.15; printf "\033[1;3C"; sleep 0.15; printf "\033[104;7u"; sleep 0.2; printf "\003"; sleep 0.1; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-smoke.bin" /tmp/haxedit-modkeys.log' >/dev/null
 	@strings /tmp/haxedit-modkeys.log | rg -q -- "--0x4/0x10--26%" || { echo "Smoke failed: CSI Alt+Right did not move by block"; exit 1; }
 	@strings /tmp/haxedit-modkeys.log | rg -q -- "--0x4/0xC--36%" || { echo "Smoke failed: CSI Ctrl+Alt+H did not delete backward block"; exit 1; }

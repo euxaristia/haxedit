@@ -13,7 +13,9 @@ Quick TTY checks for key-dispatch and behavior parity.
   - Dirty-buffer open-file guard (`Ctrl+O` cancel and save-then-open paths)
   - Clipboard persistence across open-file (`Ctrl+O`) transitions
   - `>`, `<`, `G`, and `Enter` goto offset
-  - Search forward/reverse (`/`, `Ctrl+R`)
+  - Search forward/reverse (`/`, `Ctrl+R`) and invalid-pattern handling
+  - Invalid truncate-input handling
+  - System clipboard failure path handling (test hook)
   - Sector-mode goto/navigation (`Enter`, `Alt+F`, `Ctrl+V`)
   - CSI-modifier compatibility (`Alt+Right` via `CSI 1;3C`, `Ctrl+Alt+H` via `CSI u`)
   - `--color` byte-class highlights
