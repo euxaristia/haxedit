@@ -110,6 +110,20 @@ smoke: $(BINARY)
 	@strings /tmp/haxedit-sector.log | rg -q -- "--0x308/0x800--37%--sector 1" || { echo "Smoke failed: Ctrl+V did not advance by 0x100"; exit 1; }
 	@echo "Smoke OK"
 
+smoke-ci: $(BINARY)
+	@command -v script >/dev/null 2>&1 || { echo "Error: script(1) not found"; exit 1; }
+	@command -v strings >/dev/null 2>&1 || { echo "Error: strings(1) not found"; exit 1; }
+	@command -v rg >/dev/null 2>&1 || { echo "Error: rg not found"; exit 1; }
+	@./$(BINARY) --help | rg -q -- "^usage: haxedit \\[options\\] <file>$$" || { echo "Smoke CI failed: --help output mismatch"; exit 1; }
+	@bash -lc './$(BINARY) /tmp/definitely-missing-haxedit-file.bin >/tmp/haxedit-ci-no-file.out 2>&1; test $$? -ne 0' || { echo "Smoke CI failed: missing file should fail"; exit 1; }
+	@rg -q -- "cannot open file" /tmp/haxedit-ci-no-file.out || { echo "Smoke CI failed: missing file error text mismatch"; exit 1; }
+	@bash -lc './$(BINARY) --linelength 5000 >/tmp/haxedit-ci-ll-bad.out 2>&1; test $$? -ne 0' || { echo "Smoke CI failed: invalid --linelength should fail"; exit 1; }
+	@rg -q -- "invalid line length" /tmp/haxedit-ci-ll-bad.out || { echo "Smoke CI failed: invalid --linelength missing error text"; exit 1; }
+	@printf '\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff' > /tmp/haxedit-ci.bin
+	@bash -lc '{ sleep 0.15; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-ci.bin" /tmp/haxedit-ci.log' >/dev/null
+	@strings /tmp/haxedit-ci.log | rg -q -- "OFFSET[[:space:]]+HEX[[:space:]]+ASCII" || { echo "Smoke CI failed: panel header not rendered"; exit 1; }
+	@echo "Smoke CI OK"
+
 install: $(BINARY)
 	install -d $(BINDIR)
 	install $(BINARY) $(BINDIR)/haxedit
@@ -137,4 +151,4 @@ $(BINARY): $(HOLY_SOURCES)
 clean:
 	rm -f $(BINARY)
 
-.PHONY: all build test smoke install local-install uninstall local-uninstall clean
+.PHONY: all build test smoke smoke-ci install local-install uninstall local-uninstall clean

@@ -139,4 +139,4 @@ jobs:
         run: make build
 
       - name: Smoke
-        run: make smoke
+        run: make smoke-ci
