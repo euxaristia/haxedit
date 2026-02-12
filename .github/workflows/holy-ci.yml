@@ -10,10 +10,67 @@ on:
 jobs:
   build-and-smoke:
     name: Build And Smoke
-    runs-on: [self-hosted, linux, x64, holyc]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install Build Prereqs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git ca-certificates curl \
+            ripgrep xxd binutils util-linux
+
+      - name: Install hcc
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if command -v hcc >/dev/null 2>&1; then
+            echo "hcc already available"
+            hcc --version || true
+            exit 0
+          fi
+
+          repos=(
+            "https://github.com/euxaristia/hcc.git"
+            "https://github.com/euxaristia/holyc.git"
+            "https://github.com/Jamesbarford/holyc-lang.git"
+          )
+
+          rm -rf /tmp/hcc-src
+          for repo in "${repos[@]}"; do
+            echo "Trying $repo"
+            if git clone --depth 1 "$repo" /tmp/hcc-src; then
+              break
+            fi
+          done
+
+          if [ ! -d /tmp/hcc-src ]; then
+            echo "Unable to clone an hcc source repo"
+            exit 1
+          fi
+
+          cd /tmp/hcc-src
+
+          # Try common build entrypoints used by HolyC compiler repos.
+          if [ -x ./build.sh ]; then
+            ./build.sh || true
+          fi
+          if [ -f Makefile ] || [ -f makefile ]; then
+            make -j"$(nproc)" || true
+          fi
+          if [ -x ./hcc ]; then
+            sudo install -m 0755 ./hcc /usr/local/bin/hcc
+          fi
+
+          if ! command -v hcc >/dev/null 2>&1; then
+            echo "hcc installation failed. Update holy-ci.yml with your canonical hcc bootstrap."
+            exit 1
+          fi
+
+          hcc --version || true
 
       - name: Toolchain Check
         run: |

@@ -311,14 +311,6 @@ U0 RecalcBpl()
 I64 ViewBpl()
 {
   Editor *g = _G();
-  I64 bpl;
-
-  if (g->pane == PANE_ASCII && !g->sector_mode) {
-    /* Wide ASCII reader layout: use nearly full terminal width for text. */
-    bpl = g->cols - 12;
-    if (bpl < 4) bpl = 4;
-    return bpl;
-  }
   return g->bpl;
 }
 
@@ -1184,7 +1176,6 @@ U0 HandleMouseKey()
 {
   Editor *g = _G();
   I64 row, col, bpl, hex_start, ascii_start, idx, pane, line_idx, off, loc;
-  Bool ascii_wide = FALSE;
 
   if (g->mouse_kind < 0) return;
 
@@ -1193,16 +1184,12 @@ U0 HandleMouseKey()
   bpl = ViewBpl();
   hex_start = 10;
   ascii_start = hex_start + 3 * bpl + 2;
-  if (g->pane == PANE_ASCII && !g->sector_mode) {
-    ascii_wide = TRUE;
-    ascii_start = 11;
-  }
   idx = -1;
   pane = g->pane;
 
   if (row < 0 || row >= g->rows - 1) return;
 
-  if (!ascii_wide && col >= hex_start && col < hex_start + 3 * bpl) {
+  if (col >= hex_start && col < hex_start + 3 * bpl) {
     idx = (col - hex_start) / 3;
     pane = PANE_HEX;
   } else if (col >= ascii_start && col < ascii_start + bpl) {
@@ -1551,39 +1538,6 @@ U0 DrawLine(I64 off)
 
   snprintf(tmp, 255, "%08lx  ", off);
   WriteStr(tmp);
-
-  if (g->pane == PANE_ASCII && !g->sector_mode) {
-    I64 i;
-    WriteStr("|");
-    for (i = 0; i < bpl; ++i) {
-      I64 idx = off + i;
-      U8 ch = ' ';
-      Bool marked = FALSE;
-      Bool active_sel = FALSE;
-      Bool ghost_sel = FALSE;
-      if (idx < g->len) {
-        ch = PrintCh(g->buf[idx]);
-        active_sel = (idx == g->cur && g->pane == PANE_ASCII);
-        ghost_sel = (idx == g->cur && g->pane == PANE_HEX);
-        if (have_sel && idx >= sel_min && idx <= sel_max) marked = TRUE;
-      }
-      Bool active_mark = marked && sel_pane == PANE_ASCII;
-      Bool ghost_mark = marked && sel_pane == PANE_HEX;
-      if (active_sel) WriteStr("\x1b[7m");
-      else if (active_mark) WriteStr("\x1b[7m");
-      else if (ghost_sel || ghost_mark) WriteStr("\x1b[2m");
-      else if (g->colored && idx < g->len) {
-        U8 *cseq = ColorSeqForByte(g->buf[idx]);
-        if (cseq[0]) WriteStr(cseq);
-      }
-      write(1, &ch, 1);
-      if (active_sel || active_mark || ghost_sel || ghost_mark || (g->colored && idx < g->len)) {
-        WriteStr("\x1b[0m");
-      }
-    }
-    WriteStr("|\x1b[K\r\n");
-    return;
-  }
 
   I64 i;
   for (i = 0; i < bpl; ++i) {
