@@ -47,7 +47,7 @@ haxedit [options] <filename>
 ```
 
 **Options:**
-- `-s`, `--sector`: Format the display to have entire sectors.
+- `-s`, `--sector`: Sector layout with fixed 16-byte lines.
 - `-m`, `--maximize`: Maximize the display.
 - `-l<n>`, `--linelength <n>`: Explicitly set the number of bytes to display per line.
 - `--color`: Display colors (if supported).

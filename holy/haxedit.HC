@@ -46,6 +46,7 @@
 #define UNDO_MAX 256
 #define UNDO_DATA_MAX 4096
 #define SIGTSTP 20
+#define SECTOR_SIZE 512
 
 #define UNDO_OP_OVERWRITE 1
 #define UNDO_OP_INSERT    2
@@ -127,6 +128,7 @@ class Editor
   Bool mouse_down;
   I64 mouse_start_pos;
   I64 mouse_start_pane;
+  Bool sector_mode;
   U8 status[256];
 };
 
@@ -647,6 +649,37 @@ U0 GotoOffsetPrompt()
   snprintf(g->status, 255, "goto: 0x%lx", off);
 }
 
+U0 GotoSectorPrompt()
+{
+  Editor *g = _G();
+  U8 query[128];
+  U8 *end = NULL;
+  I64 sec;
+  I64 off;
+
+  if (PromptLine("goto sector: ", query, 128) <= 0) {
+    SetStatus("goto: cancelled");
+    return;
+  }
+
+  sec = strtoll(query, &end, 10);
+  if (end == query || *end != 0 || sec < 0) {
+    SetStatus("goto: invalid sector");
+    return;
+  }
+  if (sec > g->len / SECTOR_SIZE) {
+    SetStatus("goto: invalid sector");
+    return;
+  }
+
+  off = sec * SECTOR_SIZE;
+  if (off > g->len) off = g->len;
+  g->cur = off;
+  g->hex_half = 0;
+  KeepVisible();
+  snprintf(g->status, 255, "goto: sector %ld (0x%lx)", sec, off);
+}
+
 U0 OpenFilePrompt()
 {
   Editor *g = _G();
@@ -655,6 +688,7 @@ U0 OpenFilePrompt()
   Bool keep_readonly;
   I64 keep_bpl;
   Bool keep_bpl_auto;
+  Bool keep_sector_mode;
 
   if (PromptLine("file name: ", path, 512) <= 0) {
     SetStatus("open: cancelled");
@@ -671,10 +705,12 @@ U0 OpenFilePrompt()
   keep_readonly = g->readonly;
   keep_bpl = g->bpl;
   keep_bpl_auto = g->bpl_auto;
+  keep_sector_mode = g->sector_mode;
   InitEditor(path);
   g->readonly = keep_readonly;
   g->bpl = keep_bpl;
   g->bpl_auto = keep_bpl_auto;
+  g->sector_mode = keep_sector_mode;
   KeepVisible();
   SetStatus("opened file");
 }
@@ -684,13 +720,13 @@ U0 ShowHelp()
   WriteStr("\x1b[2J\x1b[H");
   WriteStr("HaxEdit Help\r\n");
   WriteStr("\r\n");
-  WriteStr("Movement: Arrows, h/j/k/l, PgUp/PgDn, Home/End\r\n");
+  WriteStr("Movement: Arrows, h/j/k/l, PgUp/PgDn, Home/End, </>, G (hex pane)\r\n");
   WriteStr("Edit: type in hex/ascii pane, Ctrl+Q quoted insert\r\n");
   WriteStr("Search: / or Ctrl+S forward, Ctrl+R backward\r\n");
   WriteStr("Mark/Copy/Paste: v set mark, y copy, Ctrl+Y paste\r\n");
-  WriteStr("File: Ctrl+O open, Ctrl+W save, Ctrl+X save+quit, Ctrl+C quit\r\n");
+  WriteStr("File: Ctrl+O open, Ctrl+W save, Ctrl+X save+quit, Ctrl+C quit, Enter goto (sector in -s)\r\n");
   WriteStr("Pane: Tab or Ctrl+T toggle hex/ascii\r\n");
-  WriteStr("Undo/Redo: u or Ctrl+U/Ctrl+Z/Ctrl+_ undo, U redo\r\n");
+  WriteStr("Undo/Redo: u or Ctrl+U/Ctrl+_ undo, U redo, Ctrl+Z suspend\r\n");
   WriteStr("Function keys: F2 save, F3 open, F4 goto, F5/F6 page, F7/F8 copy/paste, F9 mark, F10 save+quit\r\n");
   WriteStr("\r\nPress any key to return...");
   ReadKey();
@@ -1385,7 +1421,12 @@ U0 DrawScreen()
   cur_disp = g->cur;
   end_disp = g->len;
   snprintf(name_field, 63, "%-16s", name);
-  snprintf(status_line, 511, "---  %s --0x%lX/0x%lX--%ld%%", name_field, cur_disp, end_disp, pct);
+  if (g->sector_mode) {
+    I64 sec = cur_disp / SECTOR_SIZE;
+    snprintf(status_line, 511, "---  %s --0x%lX/0x%lX--%ld%%--sector %ld", name_field, cur_disp, end_disp, pct, sec);
+  } else {
+    snprintf(status_line, 511, "---  %s --0x%lX/0x%lX--%ld%%", name_field, cur_disp, end_disp, pct);
+  }
   used = strlen(status_line);
   if (used > g->cols) used = g->cols;
   pad_right = g->cols - used;
@@ -1396,13 +1437,61 @@ U0 DrawScreen()
   WriteStr("\x1b[0m");
 }
 
+U0 ToggleMarkAtCursor()
+{
+  Editor *g = _G();
+  if (!g->mark_on) {
+    g->mark_on = TRUE;
+    g->mark_pane = g->pane;
+    g->mark_pos = g->cur;
+    snprintf(g->status, 255, "mark set at 0x%lx", g->mark_pos);
+  } else {
+    g->mark_on = FALSE;
+    SetStatus("mark cleared");
+  }
+}
+
+U0 PasteClipboardAtCursor()
+{
+  Editor *g = _G();
+  if (g->readonly) {
+    SetStatus("readonly: cannot paste");
+    return;
+  }
+  PasteClipboard();
+  KeepVisible();
+}
+
+U0 QuotedInsertAtCursor()
+{
+  Editor *g = _G();
+  I64 qk;
+  if (g->readonly) {
+    SetStatus("readonly: cannot edit");
+    return;
+  }
+  qk = ReadKey();
+  if (qk >= 0 && qk <= 255) {
+    U8 b = qk & 0xFF;
+    SetByteAt(g->cur, b, TRUE);
+    MoveCursor(1);
+    KeepVisible();
+    SetStatus("quoted insert");
+  }
+}
+
 U0 ProcessKey(I64 k, Bool *running)
 {
   Editor *g = _G();
   I64 bpl = g->bpl;
+  I64 bloc = 4;
   I64 page_rows = 1;
   if (g->rows > 2) page_rows = (g->rows - 2);
   I64 page = page_rows * bpl;
+  if (g->sector_mode) {
+    bloc = 8;
+    page = 256;
+  }
 
   if (k == K_MOUSE) {
     if (g->mouse_kind < 0) return;
@@ -1487,19 +1576,7 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == 17) {
-    I64 qk;
-    if (g->readonly) {
-      SetStatus("readonly: cannot edit");
-      return;
-    }
-    qk = ReadKey();
-    if (qk >= 0 && qk <= 255) {
-      U8 b = qk & 0xFF;
-      SetByteAt(g->cur, b, TRUE);
-      MoveCursor(1);
-      KeepVisible();
-      SetStatus("quoted insert");
-    }
+    QuotedInsertAtCursor();
     return;
   }
 
@@ -1534,24 +1611,11 @@ U0 ProcessKey(I64 k, Bool *running)
   if (k == K_F6) { MoveCursor(page); KeepVisible(); return; }
   if (k == K_F7) { CopyMarkedRegion(); return; }
   if (k == K_F8) {
-    if (g->readonly) {
-      SetStatus("readonly: cannot paste");
-      return;
-    }
-    PasteClipboard();
-    KeepVisible();
+    PasteClipboardAtCursor();
     return;
   }
   if (k == K_F9) {
-    if (!g->mark_on) {
-      g->mark_on = TRUE;
-      g->mark_pane = g->pane;
-      g->mark_pos = g->cur;
-      snprintf(g->status, 255, "mark set at 0x%lx", g->mark_pos);
-    } else {
-      g->mark_on = FALSE;
-      SetStatus("mark cleared");
-    }
+    ToggleMarkAtCursor();
     return;
   }
   if (k == K_F10) {
@@ -1621,7 +1685,21 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == '<') {
+    g->cur = 0;
+    g->hex_half = 0;
+    KeepVisible();
+    return;
+  }
+
   if (k == K_ALT_BASE + '>') {
+    g->cur = g->len;
+    g->hex_half = 0;
+    KeepVisible();
+    return;
+  }
+
+  if (k == '>') {
     g->cur = g->len;
     g->hex_half = 0;
     KeepVisible();
@@ -1641,15 +1719,7 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == 'v' || k == 0) {
-    if (!g->mark_on) {
-      g->mark_on = TRUE;
-      g->mark_pane = g->pane;
-      g->mark_pos = g->cur;
-      snprintf(g->status, 255, "mark set at 0x%lx", g->mark_pos);
-    } else {
-      g->mark_on = FALSE;
-      SetStatus("mark cleared");
-    }
+    ToggleMarkAtCursor();
     return;
   }
 
@@ -1674,12 +1744,7 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == 'p' || k == 25) {
-    if (g->readonly) {
-      SetStatus("readonly: cannot paste");
-      return;
-    }
-    PasteClipboard();
-    KeepVisible();
+    PasteClipboardAtCursor();
     return;
   }
 
@@ -1689,17 +1754,18 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == K_INSERT) {
-    if (g->readonly) {
-      SetStatus("readonly: cannot paste");
-      return;
-    }
-    PasteClipboard();
-    KeepVisible();
+    PasteClipboardAtCursor();
     return;
   }
 
   if (k == 'g' || k == 7) {
     GotoOffsetPrompt();
+    return;
+  }
+
+  if (k == '\n' || k == '\r') {
+    if (g->sector_mode) GotoSectorPrompt();
+    else GotoOffsetPrompt();
     return;
   }
 
@@ -1709,24 +1775,12 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == K_ALT_BASE + 'q' || k == K_ALT_BASE + 'Q') {
-    I64 qk;
-    if (g->readonly) {
-      SetStatus("readonly: cannot edit");
-      return;
-    }
-    qk = ReadKey();
-    if (qk >= 0 && qk <= 255) {
-      U8 b = qk & 0xFF;
-      SetByteAt(g->cur, b, TRUE);
-      MoveCursor(1);
-      KeepVisible();
-      SetStatus("quoted insert");
-    }
+    QuotedInsertAtCursor();
     return;
   }
 
   if (k == K_ALT_BASE + 8) {
-    DeleteBackwardBytes(4);
+    DeleteBackwardBytes(bloc);
     return;
   }
 
@@ -1758,18 +1812,25 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == 'G' && g->pane == PANE_HEX) {
+    g->cur = g->len;
+    g->hex_half = 0;
+    KeepVisible();
+    return;
+  }
+
   if (k == 6) { MoveCursor(1); KeepVisible(); return; }      /* Ctrl+F */
   if (k == 2) { MoveCursor(-1); KeepVisible(); return; }     /* Ctrl+B */
   if (k == 14) { MoveCursor(bpl); KeepVisible(); return; }   /* Ctrl+N */
   if (k == 16) { MoveCursor(-bpl); KeepVisible(); return; }  /* Ctrl+P */
-  if (k == K_ALT_ARROW_RIGHT) { MoveCursor(4); KeepVisible(); return; }
-  if (k == K_ALT_ARROW_LEFT) { MoveCursor(-4); KeepVisible(); return; }
-  if (k == K_ALT_ARROW_DOWN) { MoveCursor(4 * bpl); KeepVisible(); return; }
-  if (k == K_ALT_ARROW_UP) { MoveCursor(-4 * bpl); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursor(4); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursor(-4); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursor(4 * bpl); KeepVisible(); return; }
-  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursor(-4 * bpl); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_RIGHT) { MoveCursor(bloc); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_LEFT) { MoveCursor(-bloc); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_DOWN) { MoveCursor(bloc * bpl); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_UP) { MoveCursor(-bloc * bpl); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursor(bloc); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursor(-bloc); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursor(bloc * bpl); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursor(-bloc * bpl); KeepVisible(); return; }
   if (k == 1) { g->cur = (g->cur / bpl) * bpl; g->hex_half = 0; KeepVisible(); return; }  /* Ctrl+A */
   if (k == 5) {                                                 /* Ctrl+E */
     I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
@@ -1848,7 +1909,7 @@ U0 InitEditor(U8 *path)
   g->hex_half = 0;
   g->dirty = FALSE;
   g->quit_confirm = FALSE;
-  SetStatus("Ctrl+O open | Ctrl+W save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/Ctrl+Y mark-copy-paste");
+  SetStatus("Ctrl+O open | Ctrl+W save | Ctrl+X save+quit | Ctrl+C quit | Enter goto (sector in -s) | / search");
 }
 
 I32 Main(I32 argc, U8 **argv)
@@ -1859,6 +1920,7 @@ I32 Main(I32 argc, U8 **argv)
   I64 req_bpl = 16;
   Bool req_auto = TRUE;
   Bool req_readonly = FALSE;
+  Bool req_sector_mode = FALSE;
   I32 i = 1;
 
   while (i < argc) {
@@ -1866,17 +1928,19 @@ I32 Main(I32 argc, U8 **argv)
     if (!strcmp(arg, "-h") || !strcmp(arg, "--help")) {
       "usage: %s [options] <file>\n", argv[0];
       "  -r, --readonly       open read-only\n";
-      "  -s, --sector         set line length to 32\n";
+      "  -s, --sector         sector layout (fixed 16-byte lines)\n";
       "  -m, --maximize       auto line length from terminal width\n";
       "  -lN, --linelength N  set line length\n";
       return 0;
     } else if (!strcmp(arg, "-r") || !strcmp(arg, "--readonly")) {
       req_readonly = TRUE;
     } else if (!strcmp(arg, "-s") || !strcmp(arg, "--sector")) {
-      req_bpl = 32;
+      req_bpl = 16;
       req_auto = FALSE;
+      req_sector_mode = TRUE;
     } else if (!strcmp(arg, "-m") || !strcmp(arg, "--maximize")) {
       req_auto = TRUE;
+      req_sector_mode = FALSE;
     } else if (!strcmp(arg, "--color")) {
       /* ANSI color is currently always enabled; accept for CLI compatibility. */
     } else if (StartsWith(arg, "-l") && strlen(arg) > 2) {
@@ -1936,9 +2000,15 @@ I32 Main(I32 argc, U8 **argv)
   }
 
   InitEditor(file);
+  if (req_sector_mode) {
+    /* Match Swift/original behavior: sector layout uses fixed 16-byte lines. */
+    req_bpl = 16;
+    req_auto = FALSE;
+  }
   g->bpl = req_bpl;
   g->bpl_auto = req_auto;
   g->readonly = req_readonly;
+  g->sector_mode = req_sector_mode;
 
   WriteStr("\x1b[2J\x1b[H");
   EnterRaw();
