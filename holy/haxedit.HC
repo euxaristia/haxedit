@@ -41,6 +41,7 @@
 #define TIOCGWINSZ 0x5413
 #define UNDO_MAX 256
 #define UNDO_DATA_MAX 4096
+#define SIGTSTP 20
 
 #define UNDO_OP_OVERWRITE 1
 #define UNDO_OP_INSERT    2
@@ -67,6 +68,8 @@ extern "c" I32 strcmp(U8 *s1, U8 *s2);
 extern "c" U0 exit(I32 code);
 extern "c" I32 isatty(I32 fd);
 extern "c" I64 strtoll(U8 *nptr, U8 **endptr, I64 base);
+extern "c" I32 kill(I32 pid, I32 sig);
+extern "c" I32 getpid(U0);
 
 class WinSize
 {
@@ -140,6 +143,7 @@ U0 FillMarkedRegionPrompt();
 U0 TruncateFilePrompt();
 U0 CopyMarkedRegionToSystemClipboard();
 U0 DeleteBackwardBytes(I64 n);
+U0 SuspendEditor();
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -996,6 +1000,16 @@ U0 DeleteBackwardBytes(I64 n)
   snprintf(g->status, 255, "deleted %ld bytes", del);
 }
 
+U0 SuspendEditor()
+{
+  LeaveRaw();
+  WriteStr("\x1b[?25h\x1b[0m");
+  kill(getpid(), SIGTSTP);
+  EnterRaw();
+  RefreshSize();
+  SetStatus("resumed");
+}
+
 U0 MoveCursor(I64 delta)
 {
   Editor *g = _G();
@@ -1556,6 +1570,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == 12) {
+    SetStatus("redisplay");
+    return;
+  }
+
   if (k == K_ALT_BASE + 'o' || k == K_ALT_BASE + 'O') {
     OpenFilePrompt();
     return;
@@ -1703,12 +1722,17 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'u' || k == 21 || k == 26 || k == 31) {
+  if (k == 'u' || k == 21 || k == 31) {
     if (g->readonly) {
       SetStatus("readonly: cannot undo");
       return;
     }
     UndoOnce();
+    return;
+  }
+
+  if (k == 26) {
+    SuspendEditor();
     return;
   }
 
@@ -1806,6 +1830,7 @@ I32 Main(I32 argc, U8 **argv)
 {
   Editor *g = _G();
   U8 *file = NULL;
+  U8 prompted_file[512];
   I64 req_bpl = 16;
   Bool req_auto = TRUE;
   Bool req_readonly = FALSE;
@@ -1863,9 +1888,26 @@ I32 Main(I32 argc, U8 **argv)
     i++;
   }
 
-  if (!file || i + 1 != argc) {
+  if (file && i + 1 != argc) {
     "usage: %s [options] <file>\n", argv[0];
     return 1;
+  }
+
+  if (!file) {
+    I64 off = 0;
+    U8 ch;
+    WriteStr("file name: ");
+    while (off < 511) {
+      if (read(0, &ch, 1) != 1) continue;
+      if (ch == '\n' || ch == '\r') break;
+      prompted_file[off++] = ch;
+    }
+    prompted_file[off] = 0;
+    if (off <= 0) {
+      "no file provided\n";
+      return 1;
+    }
+    file = prompted_file;
   }
 
   InitEditor(file);
