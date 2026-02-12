@@ -1770,8 +1770,16 @@ U0 ProcessKey(I64 k, Bool *running)
   else if (k == K_ARROW_DOWN || k == 'j') MoveCursor(bpl);
   else if (k == K_PAGE_UP) MoveCursor(-page);
   else if (k == K_PAGE_DOWN) MoveCursor(page);
-  else if (k == K_HOME) { g->cur = 0; g->hex_half = 0; }
-  else if (k == K_END) { g->cur = g->len; g->hex_half = 0; }
+  else if (k == K_HOME) {
+    g->cur = (g->cur / bpl) * bpl;
+    g->hex_half = 0;
+  }
+  else if (k == K_END) {
+    I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
+    if (line_end > g->len) line_end = g->len;
+    g->cur = line_end;
+    g->hex_half = 0;
+  }
   else {
     if (g->pane == PANE_HEX) {
       I64 v = HexVal(k);
