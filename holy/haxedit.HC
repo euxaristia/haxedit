@@ -18,6 +18,20 @@
 #define K_HOME        1006
 #define K_END         1007
 #define K_MOUSE       1008
+#define K_INSERT      1009
+#define K_DELETE      1010
+#define K_F1          1011
+#define K_F2          1012
+#define K_F3          1013
+#define K_F4          1014
+#define K_F5          1015
+#define K_F6          1016
+#define K_F7          1017
+#define K_F8          1018
+#define K_F9          1019
+#define K_F10         1020
+#define K_F11         1021
+#define K_F12         1022
 
 #define PANE_HEX   0
 #define PANE_ASCII 1
@@ -116,6 +130,7 @@ Editor *_G(U0)
 U0 KeepVisible();
 U0 SetStatus(U8 *msg);
 U0 WriteStr(U8 *s);
+U0 InitEditor(U8 *path);
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -615,6 +630,38 @@ U0 GotoOffsetPrompt()
   snprintf(g->status, 255, "goto: 0x%lx", off);
 }
 
+U0 OpenFilePrompt()
+{
+  Editor *g = _G();
+  U8 path[512];
+  I32 fd;
+  Bool keep_readonly;
+  I64 keep_bpl;
+  Bool keep_bpl_auto;
+
+  if (PromptLine("file name: ", path, 512) <= 0) {
+    SetStatus("open: cancelled");
+    return;
+  }
+
+  fd = open(path, O_RDONLY);
+  if (fd < 0) {
+    SetStatus("open: cannot open file");
+    return;
+  }
+  close(fd);
+
+  keep_readonly = g->readonly;
+  keep_bpl = g->bpl;
+  keep_bpl_auto = g->bpl_auto;
+  InitEditor(path);
+  g->readonly = keep_readonly;
+  g->bpl = keep_bpl;
+  g->bpl_auto = keep_bpl_auto;
+  KeepVisible();
+  SetStatus("opened file");
+}
+
 U0 MoveCursor(I64 delta)
 {
   Editor *g = _G();
@@ -766,16 +813,50 @@ I64 ReadKey()
     }
 
     if (s1 >= '0' && s1 <= '9') {
-      if (read(0, &s2, 1) != 1) return K_ESC;
-      if (s2 == '~') {
-        if (s1 == '1') return K_HOME;
-        if (s1 == '4') return K_END;
-        if (s1 == '5') return K_PAGE_UP;
-        if (s1 == '6') return K_PAGE_DOWN;
-        if (s1 == '7') return K_HOME;
-        if (s1 == '8') return K_END;
+      I64 code = s1 - '0';
+      U8 ch;
+      while (TRUE) {
+        if (read(0, &ch, 1) != 1) return K_ESC;
+        if (ch >= '0' && ch <= '9') {
+          code = code * 10 + (ch - '0');
+          continue;
+        }
+        if (ch == '~') {
+          if (code == 1 || code == 7) return K_HOME;
+          if (code == 2) return K_INSERT;
+          if (code == 3) return K_DELETE;
+          if (code == 4 || code == 8) return K_END;
+          if (code == 5) return K_PAGE_UP;
+          if (code == 6) return K_PAGE_DOWN;
+          if (code == 11) return K_F1;
+          if (code == 12) return K_F2;
+          if (code == 13) return K_F3;
+          if (code == 14) return K_F4;
+          if (code == 15) return K_F5;
+          if (code == 17) return K_F6;
+          if (code == 18) return K_F7;
+          if (code == 19) return K_F8;
+          if (code == 20) return K_F9;
+          if (code == 21) return K_F10;
+          if (code == 23) return K_F11;
+          if (code == 24) return K_F12;
+          return K_ESC;
+        }
+        if (ch == ';') {
+          while (TRUE) {
+            if (read(0, &ch, 1) != 1) return K_ESC;
+            if (ch >= 'A' && ch <= 'Z') break;
+            if (ch >= 'a' && ch <= 'z') break;
+            if (ch == '~') break;
+          }
+          if (ch == '~') {
+            if (code == 5) return K_PAGE_UP;
+            if (code == 6) return K_PAGE_DOWN;
+          }
+          return K_ESC;
+        }
+        return K_ESC;
       }
-      return K_ESC;
     }
     if (s1 == 'A') return K_ARROW_UP;
     if (s1 == 'B') return K_ARROW_DOWN;
@@ -783,6 +864,13 @@ I64 ReadKey()
     if (s1 == 'D') return K_ARROW_LEFT;
     if (s1 == 'H') return K_HOME;
     if (s1 == 'F') return K_END;
+  }
+
+  if (s0 == 'O') {
+    if (s1 == 'P') return K_F1;
+    if (s1 == 'Q') return K_F2;
+    if (s1 == 'R') return K_F3;
+    if (s1 == 'S') return K_F4;
   }
 
   return K_ESC;
@@ -1024,22 +1112,75 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == 17) {
-    if (g->dirty && !g->quit_confirm) {
-      g->quit_confirm = TRUE;
-      SetStatus("unsaved changes: press Ctrl+Q again to quit");
+    I64 qk;
+    if (g->readonly) {
+      SetStatus("readonly: cannot edit");
       return;
     }
-    *running = FALSE;
+    qk = ReadKey();
+    if (qk >= 0 && qk <= 255) {
+      U8 b = qk & 0xFF;
+      SetByteAt(g->cur, b, TRUE);
+      MoveCursor(1);
+      KeepVisible();
+      SetStatus("quoted insert");
+    }
     return;
   }
 
-  if (k == 23 || k == 19) {
+  if (k == 23) {
     SaveFile();
     g->quit_confirm = FALSE;
     return;
   }
 
-  if (k == '\t') {
+  if (k == K_F2) {
+    SaveFile();
+    g->quit_confirm = FALSE;
+    return;
+  }
+
+  if (k == K_F3) {
+    OpenFilePrompt();
+    return;
+  }
+
+  if (k == K_F4) {
+    GotoOffsetPrompt();
+    return;
+  }
+
+  if (k == K_F5) { MoveCursor(-page); KeepVisible(); return; }
+  if (k == K_F6) { MoveCursor(page); KeepVisible(); return; }
+  if (k == K_F7) { CopyMarkedRegion(); return; }
+  if (k == K_F8) {
+    if (g->readonly) {
+      SetStatus("readonly: cannot paste");
+      return;
+    }
+    PasteClipboard();
+    KeepVisible();
+    return;
+  }
+  if (k == K_F9) {
+    if (!g->mark_on) {
+      g->mark_on = TRUE;
+      g->mark_pane = g->pane;
+      g->mark_pos = g->cur;
+      snprintf(g->status, 255, "mark set at 0x%lx", g->mark_pos);
+    } else {
+      g->mark_on = FALSE;
+      SetStatus("mark cleared");
+    }
+    return;
+  }
+  if (k == K_F10) {
+    SaveFile();
+    if (!g->dirty) *running = FALSE;
+    return;
+  }
+
+  if (k == '\t' || k == 20) {
     if (g->pane == PANE_HEX) g->pane = PANE_ASCII;
     else g->pane = PANE_HEX;
     g->hex_half = 0;
@@ -1049,7 +1190,17 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == 15) {
+    OpenFilePrompt();
+    return;
+  }
+
   if (k == '/') {
+    DoSearch(TRUE);
+    return;
+  }
+
+  if (k == 19) {
     DoSearch(TRUE);
     return;
   }
@@ -1077,7 +1228,22 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == K_DELETE) {
+    CopyMarkedRegion();
+    return;
+  }
+
   if (k == 'p' || k == 25) {
+    if (g->readonly) {
+      SetStatus("readonly: cannot paste");
+      return;
+    }
+    PasteClipboard();
+    KeepVisible();
+    return;
+  }
+
+  if (k == K_INSERT) {
     if (g->readonly) {
       SetStatus("readonly: cannot paste");
       return;
@@ -1092,7 +1258,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'u' || k == 26) {
+  if (k == 'u' || k == 21 || k == 26 || k == 31) {
     if (g->readonly) {
       SetStatus("readonly: cannot undo");
       return;
@@ -1101,7 +1267,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'U' || k == 25) {
+  if (k == 'U') {
     if (g->readonly) {
       SetStatus("readonly: cannot redo");
       return;
@@ -1109,6 +1275,21 @@ U0 ProcessKey(I64 k, Bool *running)
     RedoOnce();
     return;
   }
+
+  if (k == 6) { MoveCursor(1); KeepVisible(); return; }      /* Ctrl+F */
+  if (k == 2) { MoveCursor(-1); KeepVisible(); return; }     /* Ctrl+B */
+  if (k == 14) { MoveCursor(bpl); KeepVisible(); return; }   /* Ctrl+N */
+  if (k == 16) { MoveCursor(-bpl); KeepVisible(); return; }  /* Ctrl+P */
+  if (k == 1) { g->cur = (g->cur / bpl) * bpl; g->hex_half = 0; KeepVisible(); return; }  /* Ctrl+A */
+  if (k == 5) {                                                 /* Ctrl+E */
+    I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
+    if (line_end > g->len) line_end = g->len;
+    g->cur = line_end;
+    g->hex_half = 0;
+    KeepVisible();
+    return;
+  }
+  if (k == 22) { MoveCursor(page); KeepVisible(); return; }  /* Ctrl+V */
 
   if (k == K_ARROW_LEFT || k == 'h') MoveCursor(-1);
   else if (k == K_ARROW_RIGHT || k == 'l') MoveCursor(1);
@@ -1169,7 +1350,7 @@ U0 InitEditor(U8 *path)
   g->hex_half = 0;
   g->dirty = FALSE;
   g->quit_confirm = FALSE;
-  SetStatus("Ctrl+W save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/Ctrl+Y mark-copy-paste");
+  SetStatus("Ctrl+O open | Ctrl+W save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/Ctrl+Y mark-copy-paste");
 }
 
 I32 Main(I32 argc, U8 **argv)
