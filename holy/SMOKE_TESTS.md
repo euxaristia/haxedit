@@ -1,6 +1,6 @@
 # HolyC Smoke Tests
 
-Quick TTY checks for key-dispatch and behavior parity.
+Quick TTY checks for key-dispatch and behaviour parity.
 
 ## Automated
 
@@ -18,7 +18,7 @@ Quick TTY checks for key-dispatch and behavior parity.
   - System clipboard failure path handling (test hook)
   - Sector-mode goto/navigation (`Enter`, `Alt+F`, `Ctrl+V`)
   - CSI-modifier compatibility (`Alt+Right` via `CSI 1;3C`, `Ctrl+Alt+H` via `CSI u`)
-  - `--color` byte-class highlights
+  - `--colour` byte-class highlights
   - Vim-key scope parity (hex-pane `w`, ASCII-pane literal `y/h/p/u` inserts)
 
 ## Prereqs
