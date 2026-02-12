@@ -17,6 +17,7 @@
 #define K_PAGE_DOWN   1005
 #define K_HOME        1006
 #define K_END         1007
+#define K_MOUSE       1008
 
 #define PANE_HEX   0
 #define PANE_ASCII 1
@@ -85,6 +86,7 @@ class Editor
   I64 hex_half;
   Bool readonly;
   Bool mark_on;
+  I64 mark_pane;
   I64 mark_pos;
   Bool dirty;
   Bool quit_confirm;
@@ -96,6 +98,12 @@ class Editor
   I64 undo_idx;
   U8 search[256];
   I64 search_len;
+  I64 mouse_kind;
+  I64 mouse_row;
+  I64 mouse_col;
+  Bool mouse_down;
+  I64 mouse_start_pos;
+  I64 mouse_start_pane;
   U8 status[256];
 };
 
@@ -107,6 +115,7 @@ Editor *_G(U0)
 
 U0 KeepVisible();
 U0 SetStatus(U8 *msg);
+U0 WriteStr(U8 *s);
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -262,10 +271,12 @@ U0 Die(U8 *msg)
 U0 EnterRaw()
 {
   if (isatty(0)) system("stty raw -echo 2>/dev/null");
+  WriteStr("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
 }
 
 U0 LeaveRaw()
 {
+  WriteStr("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
   if (isatty(0)) system("stty sane 2>/dev/null");
 }
 
@@ -698,6 +709,7 @@ U0 SaveFile()
 
 I64 ReadKey()
 {
+  Editor *g = _G();
   U8 c;
   I64 n;
 
@@ -713,6 +725,46 @@ I64 ReadKey()
   if (read(0, &s1, 1) != 1) return K_ESC;
 
   if (s0 == '[') {
+    if (s1 == '<') {
+      I64 b = 0, x = 0, y = 0;
+      U8 ch;
+      while (TRUE) {
+        if (read(0, &ch, 1) != 1) return K_ESC;
+        if (ch == ';') break;
+        if (ch < '0' || ch > '9') return K_ESC;
+        b = b * 10 + (ch - '0');
+      }
+      while (TRUE) {
+        if (read(0, &ch, 1) != 1) return K_ESC;
+        if (ch == ';') break;
+        if (ch < '0' || ch > '9') return K_ESC;
+        x = x * 10 + (ch - '0');
+      }
+      while (TRUE) {
+        if (read(0, &ch, 1) != 1) return K_ESC;
+        if (ch == 'M' || ch == 'm') break;
+        if (ch < '0' || ch > '9') return K_ESC;
+        y = y * 10 + (ch - '0');
+      }
+
+      g->mouse_col = 0;
+      if (x > 0) g->mouse_col = x - 1;
+      g->mouse_row = 0;
+      if (y > 0) g->mouse_row = y - 1;
+
+      /* SGR mouse: release may be '<...m' OR button=3 with 'M' on some terminals. */
+      if (ch == 'm' || ((b & 3) == 3)) {
+        g->mouse_kind = 2;                /* release */
+      } else if ((b & 32) && ((b & 3) == 0)) {
+        g->mouse_kind = 1;                /* left-button drag */
+      } else if ((b & 3) == 0) {
+        g->mouse_kind = 0;                /* left-button press */
+      } else {
+        g->mouse_kind = -1;               /* ignore non-left events */
+      }
+      return K_MOUSE;
+    }
+
     if (s1 >= '0' && s1 <= '9') {
       if (read(0, &s2, 1) != 1) return K_ESC;
       if (s2 == '~') {
@@ -758,6 +810,25 @@ U0 DrawLine(I64 off)
 {
   Editor *g = _G();
   U8 tmp[256];
+  I64 sel_min = 0;
+  I64 sel_max = -1;
+  Bool have_sel = FALSE;
+  I64 sel_pane = g->pane;
+
+  if (g->mark_on) {
+    sel_min = g->mark_pos;
+    sel_max = g->cur;
+    sel_pane = g->mark_pane;
+    if (sel_min > sel_max) {
+      I64 t = sel_min;
+      sel_min = sel_max;
+      sel_max = t;
+    }
+    if (sel_max > sel_min) {
+      have_sel = TRUE;
+    }
+  }
+
   snprintf(tmp, 255, "%08lx  ", off);
   WriteStr(tmp);
 
@@ -765,12 +836,18 @@ U0 DrawLine(I64 off)
   for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     if (idx < g->len) {
+      Bool marked = FALSE;
       Bool active_sel = (idx == g->cur && g->pane == PANE_HEX);
       Bool ghost_sel = (idx == g->cur && g->pane == PANE_ASCII);
+      if (have_sel && idx >= sel_min && idx < sel_max) marked = TRUE;
+      Bool active_mark = marked && sel_pane == PANE_HEX;
+      Bool ghost_mark = marked && sel_pane == PANE_ASCII;
       I64 hv = g->buf[idx] & 0xFF;
       if (active_sel) {
         snprintf(tmp, 255, "\x1b[7m%02x\x1b[0m ", hv);
-      } else if (ghost_sel) {
+      } else if (active_mark) {
+        snprintf(tmp, 255, "\x1b[7m%02x\x1b[0m ", hv);
+      } else if (ghost_sel || ghost_mark) {
         snprintf(tmp, 255, "\x1b[2m%02x\x1b[0m ", hv);
       } else {
         snprintf(tmp, 255, "%02x ", hv);
@@ -786,18 +863,23 @@ U0 DrawLine(I64 off)
   for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     U8 ch = ' ';
+    Bool marked = FALSE;
     Bool active_sel = FALSE;
     Bool ghost_sel = FALSE;
     if (idx < g->len) {
       ch = PrintCh(g->buf[idx]);
       active_sel = (idx == g->cur && g->pane == PANE_ASCII);
       ghost_sel = (idx == g->cur && g->pane == PANE_HEX);
+      if (have_sel && idx >= sel_min && idx < sel_max) marked = TRUE;
     }
+    Bool active_mark = marked && sel_pane == PANE_ASCII;
+    Bool ghost_mark = marked && sel_pane == PANE_HEX;
 
     if (active_sel) WriteStr("\x1b[7m");
-    else if (ghost_sel) WriteStr("\x1b[2m");
+    else if (active_mark) WriteStr("\x1b[7m");
+    else if (ghost_sel || ghost_mark) WriteStr("\x1b[2m");
     write(1, &ch, 1);
-    if (active_sel || ghost_sel) WriteStr("\x1b[0m");
+    if (active_sel || active_mark || ghost_sel || ghost_mark) WriteStr("\x1b[0m");
   }
   WriteStr("|\x1b[K\r\n");
 }
@@ -864,6 +946,65 @@ U0 ProcessKey(I64 k, Bool *running)
   if (g->rows > 2) page_rows = (g->rows - 2);
   I64 page = page_rows * bpl;
 
+  if (k == K_MOUSE) {
+    if (g->mouse_kind < 0) return;
+
+    I64 row = g->mouse_row;
+    I64 col = g->mouse_col;
+    I64 hex_start = 10;
+    I64 ascii_start = hex_start + 3 * g->bpl + 2;
+    I64 idx = -1;
+    I64 pane = g->pane;
+    I64 line_idx, off, loc;
+
+    if (row < 0 || row >= g->rows - 1) return;
+
+    if (col >= hex_start && col < hex_start + 3 * g->bpl) {
+      idx = (col - hex_start) / 3;
+      pane = PANE_HEX;
+    } else if (col >= ascii_start && col < ascii_start + g->bpl) {
+      idx = col - ascii_start;
+      pane = PANE_ASCII;
+    } else {
+      return;
+    }
+
+    line_idx = row;
+    off = g->top + line_idx * g->bpl;
+    loc = off + idx;
+    if (loc < 0) loc = 0;
+    if (loc > g->len) loc = g->len;
+
+    g->pane = pane;
+    g->cur = loc;
+    g->hex_half = 0;
+    KeepVisible();
+
+    if (g->mouse_kind == 0) {
+      /* Press: arm drag selection, but do not create one yet. */
+      g->mouse_down = TRUE;
+      g->mouse_start_pos = loc;
+      g->mouse_start_pane = pane;
+      g->mark_on = FALSE;
+    } else if (g->mouse_kind == 1) {
+      if (!g->mouse_down) return;
+      /* Drag: create/extend selection from press point. */
+      if (!g->mark_on) {
+        g->mark_on = TRUE;
+        g->mark_pane = g->mouse_start_pane;
+        g->mark_pos = g->mouse_start_pos;
+      }
+    } else if (g->mouse_kind == 2) {
+      /* Release: stop extending selection. */
+      g->mouse_down = FALSE;
+      if (g->mark_on && g->cur == g->mark_pos) {
+        /* Click without drag should leave no selection highlight. */
+        g->mark_on = FALSE;
+      }
+    }
+    return;
+  }
+
   if (k == 24) {
     SaveFile();
     if (!g->dirty) {
@@ -892,7 +1033,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 19) {
+  if (k == 23 || k == 19) {
     SaveFile();
     g->quit_confirm = FALSE;
     return;
@@ -921,6 +1062,7 @@ U0 ProcessKey(I64 k, Bool *running)
   if (k == 'v' || k == 0) {
     if (!g->mark_on) {
       g->mark_on = TRUE;
+      g->mark_pane = g->pane;
       g->mark_pos = g->cur;
       snprintf(g->status, 255, "mark set at 0x%lx", g->mark_pos);
     } else {
@@ -935,7 +1077,7 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
-  if (k == 'p') {
+  if (k == 'p' || k == 25) {
     if (g->readonly) {
       SetStatus("readonly: cannot paste");
       return;
@@ -1027,7 +1169,7 @@ U0 InitEditor(U8 *path)
   g->hex_half = 0;
   g->dirty = FALSE;
   g->quit_confirm = FALSE;
-  SetStatus("Ctrl+S save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/p mark-copy-paste");
+  SetStatus("Ctrl+W save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/Ctrl+Y mark-copy-paste");
 }
 
 I32 Main(I32 argc, U8 **argv)
