@@ -765,10 +765,13 @@ U0 DrawLine(I64 off)
   for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     if (idx < g->len) {
-      Bool sel = (idx == g->cur && g->pane == PANE_HEX);
+      Bool active_sel = (idx == g->cur && g->pane == PANE_HEX);
+      Bool ghost_sel = (idx == g->cur && g->pane == PANE_ASCII);
       I64 hv = g->buf[idx] & 0xFF;
-      if (sel) {
+      if (active_sel) {
         snprintf(tmp, 255, "\x1b[7m%02x\x1b[0m ", hv);
+      } else if (ghost_sel) {
+        snprintf(tmp, 255, "\x1b[2m%02x\x1b[0m ", hv);
       } else {
         snprintf(tmp, 255, "%02x ", hv);
       }
@@ -783,15 +786,18 @@ U0 DrawLine(I64 off)
   for (i = 0; i < g->bpl; ++i) {
     I64 idx = off + i;
     U8 ch = ' ';
-    Bool sel = FALSE;
+    Bool active_sel = FALSE;
+    Bool ghost_sel = FALSE;
     if (idx < g->len) {
       ch = PrintCh(g->buf[idx]);
-      sel = (idx == g->cur && g->pane == PANE_ASCII);
+      active_sel = (idx == g->cur && g->pane == PANE_ASCII);
+      ghost_sel = (idx == g->cur && g->pane == PANE_HEX);
     }
 
-    if (sel) WriteStr("\x1b[7m");
+    if (active_sel) WriteStr("\x1b[7m");
+    else if (ghost_sel) WriteStr("\x1b[2m");
     write(1, &ch, 1);
-    if (sel) WriteStr("\x1b[0m");
+    if (active_sel || ghost_sel) WriteStr("\x1b[0m");
   }
   WriteStr("|\x1b[K\r\n");
 }
@@ -801,12 +807,12 @@ U0 DrawScreen()
   Editor *g = _G();
   U8 tmp[512];
   U8 status_line[512];
+  U8 name_field[64];
   U8 *name;
   I64 pct;
   I64 cur_disp;
   I64 end_disp;
   I64 used;
-  I64 pad_left;
   I64 pad_right;
   RefreshSize();
   RecalcBpl();
@@ -837,18 +843,14 @@ U0 DrawScreen()
 
   name = BaseName(g->path);
   cur_disp = g->cur;
-  end_disp = 0;
-  if (g->len) end_disp = g->len - 1;
-  snprintf(status_line, 511, "%s --0x%lX/0x%lX--%ld%%", name, cur_disp, end_disp, pct);
+  end_disp = g->len;
+  snprintf(name_field, 63, "%-16s", name);
+  snprintf(status_line, 511, "---  %s --0x%lX/0x%lX--%ld%%", name_field, cur_disp, end_disp, pct);
   used = strlen(status_line);
   if (used > g->cols) used = g->cols;
-  pad_left = (g->cols - used) / 2;
-  if (pad_left < 0) pad_left = 0;
-  pad_right = g->cols - used - pad_left;
+  pad_right = g->cols - used;
   if (pad_right < 0) pad_right = 0;
 
-  WriteStr("\x1b[7m");
-  for (r = 0; r < pad_left; ++r) write(1, "-", 1);
   write(1, status_line, used);
   for (r = 0; r < pad_right; ++r) write(1, "-", 1);
   WriteStr("\x1b[0m");
