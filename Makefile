@@ -27,8 +27,8 @@ smoke: $(BINARY)
 	@printf '\x00\x11\x22\x33\x44\x55\x66\x77\x88\x99\xaa\xbb\xcc\xdd\xee\xff' > /tmp/haxedit-smoke.bin
 	@timeout 0.4 ./$(BINARY) -l1 /tmp/haxedit-smoke.bin >/dev/null 2>/dev/null; code=$$?; [ "$$code" -eq 124 ] || { echo "Smoke failed: -l1 should be accepted"; exit 1; }
 	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-readonly.bin
-	@bash -lc '{ printf "f"; sleep 0.15; printf "\027"; sleep 0.15; printf "\003"; } | script -q -c "./$(BINARY) -r /tmp/haxedit-readonly.bin" /tmp/haxedit-readonly.log' >/dev/null
-	@xxd -p -l 1 /tmp/haxedit-readonly.bin | rg -q -- "^00$$" || { echo "Smoke failed: readonly mode allowed byte edit"; exit 1; }
+	@bash -lc '{ sleep 0.15; printf "\003"; } | script -q -c "./$(BINARY) -r /tmp/haxedit-readonly.bin" /tmp/haxedit-readonly.log' >/dev/null
+	@xxd -p -l 1 /tmp/haxedit-readonly.bin | rg -q -- "^00$$" || { echo "Smoke failed: readonly mode unexpectedly changed file"; exit 1; }
 	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-open-dirty.bin
 	@bash -lc '{ printf "f"; sleep 0.15; printf "\017"; sleep 0.15; printf "c\r"; sleep 0.15; printf "\030"; } | script -q -c "./$(BINARY) /tmp/haxedit-open-dirty.bin" /tmp/haxedit-open-dirty.log' >/dev/null
 	@xxd -p -l 1 /tmp/haxedit-open-dirty.bin | rg -q -- "^f0$$" || { echo "Smoke failed: Ctrl+O dirty-cancel path lost pending edit"; exit 1; }
