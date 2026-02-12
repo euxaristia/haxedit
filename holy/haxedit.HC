@@ -32,6 +32,7 @@
 #define K_F10         1020
 #define K_F11         1021
 #define K_F12         1022
+#define K_ALT_BASE    2000
 
 #define PANE_HEX   0
 #define PANE_ASCII 1
@@ -133,6 +134,8 @@ U0 WriteStr(U8 *s);
 U0 InitEditor(U8 *path);
 U0 ShowHelp();
 I64 ReadKey();
+U0 YankToFilePrompt();
+U0 FillMarkedRegionPrompt();
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -682,6 +685,131 @@ U0 ShowHelp()
   SetStatus("help");
 }
 
+U0 YankToFilePrompt()
+{
+  Editor *g = _G();
+  U8 path[512];
+  U8 yn[16];
+  I32 fd;
+  I64 off;
+  I64 n;
+
+  if (g->clip_len <= 0) {
+    SetStatus("paste-to-file: clipboard empty");
+    return;
+  }
+
+  if (PromptLine("file name: ", path, 512) <= 0) {
+    SetStatus("paste-to-file: cancelled");
+    return;
+  }
+
+  fd = open(path, O_RDONLY);
+  if (fd >= 0) {
+    close(fd);
+    if (PromptLine("overwrite file? (y/N): ", yn, 16) <= 0) {
+      SetStatus("paste-to-file: cancelled");
+      return;
+    }
+    if (!(yn[0] == 'y' || yn[0] == 'Y')) {
+      SetStatus("paste-to-file: cancelled");
+      return;
+    }
+  }
+
+  fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  if (fd < 0) {
+    SetStatus("paste-to-file: open failed");
+    return;
+  }
+
+  off = 0;
+  while (off < g->clip_len) {
+    n = write(fd, g->clip + off, g->clip_len - off);
+    if (n <= 0) {
+      close(fd);
+      SetStatus("paste-to-file: write failed");
+      return;
+    }
+    off += n;
+  }
+  close(fd);
+  snprintf(g->status, 255, "paste-to-file: wrote %ld bytes", g->clip_len);
+}
+
+U0 FillMarkedRegionPrompt()
+{
+  Editor *g = _G();
+  U8 input[256];
+  U8 pat[256];
+  U8 *label;
+  I64 ilen;
+  I64 plen = 0;
+  I64 a, b, n, i;
+
+  if (!g->mark_on) {
+    SetStatus("fill: no mark set");
+    return;
+  }
+  if (g->readonly) {
+    SetStatus("readonly: cannot fill");
+    return;
+  }
+
+  label = "ascii fill: ";
+  if (g->pane == PANE_HEX) label = "hex fill: ";
+  if (PromptLine(label, input, 256) <= 0) {
+    SetStatus("fill: cancelled");
+    return;
+  }
+
+  if (g->pane == PANE_HEX) {
+    ilen = strlen(input);
+    if (ilen == 1) {
+      I64 hv = HexVal(input[0]);
+      if (hv < 0) {
+        SetStatus("fill: invalid hex string");
+        return;
+      }
+      pat[0] = hv;
+      plen = 1;
+    } else {
+      plen = ParseSearchPattern(input, pat, 256);
+      if (plen <= 0) {
+        SetStatus("fill: invalid hex string");
+        return;
+      }
+    }
+  } else {
+    plen = strlen(input);
+    if (plen <= 0) {
+      SetStatus("fill: empty pattern");
+      return;
+    }
+    if (plen > 256) plen = 256;
+    memcpy(pat, input, plen);
+  }
+
+  a = g->mark_pos;
+  b = g->cur;
+  if (a > b) {
+    I64 t = a;
+    a = b;
+    b = t;
+  }
+  if (b <= a) {
+    SetStatus("fill: empty region");
+    return;
+  }
+
+  n = b - a;
+  for (i = 0; i < n; ++i) {
+    g->buf[a + i] = pat[i % plen];
+  }
+  g->dirty = TRUE;
+  snprintf(g->status, 255, "fill: wrote %ld bytes", n);
+}
+
 U0 MoveCursor(I64 delta)
 {
   Editor *g = _G();
@@ -787,8 +915,12 @@ I64 ReadKey()
 
   if (c != 27) return c;
 
-  U8 s0, s1, s2;
+  U8 s0, s1;
   if (read(0, &s0, 1) != 1) return K_ESC;
+  if (s0 != '[' && s0 != 'O') {
+    if (s0 == 27) return K_ESC;
+    return K_ALT_BASE + s0;
+  }
   if (read(0, &s1, 1) != 1) return K_ESC;
 
   if (s0 == '[') {
@@ -1204,6 +1336,14 @@ U0 ProcessKey(I64 k, Bool *running)
     if (!g->dirty) *running = FALSE;
     return;
   }
+  if (k == K_F11) {
+    YankToFilePrompt();
+    return;
+  }
+  if (k == K_F12) {
+    FillMarkedRegionPrompt();
+    return;
+  }
 
   if (k == '\t' || k == 20) {
     if (g->pane == PANE_HEX) g->pane = PANE_ASCII;
@@ -1220,6 +1360,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == K_ALT_BASE + 'o' || k == K_ALT_BASE + 'O') {
+    OpenFilePrompt();
+    return;
+  }
+
   if (k == '/') {
     DoSearch(TRUE);
     return;
@@ -1232,6 +1377,38 @@ U0 ProcessKey(I64 k, Bool *running)
 
   if (k == 18) {
     DoSearch(FALSE);
+    return;
+  }
+
+  if (k == K_ALT_BASE + 'v' || k == K_ALT_BASE + 'V') {
+    MoveCursor(-page);
+    KeepVisible();
+    return;
+  }
+
+  if (k == K_ALT_BASE + '<') {
+    g->cur = 0;
+    g->hex_half = 0;
+    KeepVisible();
+    return;
+  }
+
+  if (k == K_ALT_BASE + '>') {
+    g->cur = g->len;
+    g->hex_half = 0;
+    KeepVisible();
+    return;
+  }
+
+  if (k == K_ALT_BASE + 'l' || k == K_ALT_BASE + 'L') {
+    g->top = (g->cur / bpl) * bpl;
+    KeepVisible();
+    SetStatus("recenter");
+    return;
+  }
+
+  if (k == K_ALT_BASE + 'h' || k == K_ALT_BASE + 'H') {
+    ShowHelp();
     return;
   }
 
@@ -1253,6 +1430,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == K_ALT_BASE + 'w' || k == K_ALT_BASE + 'W') {
+    CopyMarkedRegion();
+    return;
+  }
+
   if (k == K_DELETE) {
     CopyMarkedRegion();
     return;
@@ -1268,6 +1450,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == K_ALT_BASE + 'y' || k == K_ALT_BASE + 'Y') {
+    YankToFilePrompt();
+    return;
+  }
+
   if (k == K_INSERT) {
     if (g->readonly) {
       SetStatus("readonly: cannot paste");
@@ -1280,6 +1467,33 @@ U0 ProcessKey(I64 k, Bool *running)
 
   if (k == 'g' || k == 7) {
     GotoOffsetPrompt();
+    return;
+  }
+
+  if (k == K_ALT_BASE + 'i' || k == K_ALT_BASE + 'I') {
+    FillMarkedRegionPrompt();
+    return;
+  }
+
+  if (k == K_ALT_BASE + 'q' || k == K_ALT_BASE + 'Q') {
+    I64 qk;
+    if (g->readonly) {
+      SetStatus("readonly: cannot edit");
+      return;
+    }
+    qk = ReadKey();
+    if (qk >= 0 && qk <= 255) {
+      U8 b = qk & 0xFF;
+      SetByteAt(g->cur, b, TRUE);
+      MoveCursor(1);
+      KeepVisible();
+      SetStatus("quoted insert");
+    }
+    return;
+  }
+
+  if (k == K_ALT_BASE + 't' || k == K_ALT_BASE + 'T') {
+    SetStatus("truncate: not implemented yet");
     return;
   }
 
@@ -1305,6 +1519,10 @@ U0 ProcessKey(I64 k, Bool *running)
   if (k == 2) { MoveCursor(-1); KeepVisible(); return; }     /* Ctrl+B */
   if (k == 14) { MoveCursor(bpl); KeepVisible(); return; }   /* Ctrl+N */
   if (k == 16) { MoveCursor(-bpl); KeepVisible(); return; }  /* Ctrl+P */
+  if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursor(4); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursor(-4); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursor(4 * bpl); KeepVisible(); return; }
+  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursor(-4 * bpl); KeepVisible(); return; }
   if (k == 1) { g->cur = (g->cur / bpl) * bpl; g->hex_half = 0; KeepVisible(); return; }  /* Ctrl+A */
   if (k == 5) {                                                 /* Ctrl+E */
     I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
