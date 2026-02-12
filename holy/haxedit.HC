@@ -1195,6 +1195,14 @@ U0 HandleMouseKey()
   if (col >= hex_start && col < hex_start + 3 * bpl) {
     idx = (col - hex_start) / 3;
     pane = PANE_HEX;
+  } else if (col == ascii_start - 1) {
+    /* Boundary click: snap to first ASCII cell. */
+    idx = 0;
+    pane = PANE_ASCII;
+  } else if (col == ascii_start + bpl) {
+    /* Boundary click: snap to last ASCII cell. */
+    idx = bpl - 1;
+    pane = PANE_ASCII;
   } else if (col >= ascii_start && col < ascii_start + bpl) {
     idx = col - ascii_start;
     pane = PANE_ASCII;
@@ -1278,9 +1286,9 @@ U0 DrawPanelHeader(I64 bpl)
   snprintf(tmp, 31, "%-8s  ", "OFFSET");
   WriteStr(tmp);
   WriteCenteredLabel("HEX", 3 * bpl);
-  WriteStr(" |");
+  WriteStr("  ");
   WriteCenteredLabel("ASCII", bpl);
-  WriteStr("|\x1b[K\r\n");
+  WriteStr(" \x1b[K\r\n");
 }
 
 U0 PrintUsage(I32 fd, U8 *prog)
@@ -1605,7 +1613,7 @@ U0 DrawLine(I64 off)
     }
   }
 
-  WriteStr(" |");
+  WriteStr("  ");
 
   for (i = 0; i < bpl; ++i) {
     I64 idx = off + i;
@@ -1636,7 +1644,7 @@ U0 DrawLine(I64 off)
     write(1, &ch, 1);
     if (active_sel || active_mark || ghost_sel || ghost_mark || colored_style) WriteStr("\x1b[0m");
   }
-  WriteStr("|\x1b[K\r\n");
+  WriteStr(" \x1b[K\r\n");
 }
 
 U0 DrawScreen()
