@@ -1260,16 +1260,22 @@ U0 ScrollViewportLines(I64 lines)
   Editor *g = _G();
   I64 bpl = ViewBpl();
   I64 max_top;
+  I64 vrows = 1;
+  I64 eof_row = 0;
+  I64 max_top_row;
   I64 top;
 
   if (lines == 0) return;
   if (bpl <= 0) return;
+  if (g->rows > 2) vrows = g->rows - 2;
+  if (g->len > 0) eof_row = (g->len - 1) / bpl;
 
   top = g->top + lines * bpl;
   if (top < 0) top = 0;
 
-  max_top = (g->len / bpl) * bpl;
-  if (max_top < 0) max_top = 0;
+  max_top_row = eof_row - (vrows - 1);
+  if (max_top_row < 0) max_top_row = 0;
+  max_top = max_top_row * bpl;
   if (top > max_top) top = max_top;
 
   g->top = top;
