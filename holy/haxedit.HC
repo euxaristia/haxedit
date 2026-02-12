@@ -32,6 +32,7 @@
 #define K_F10         1020
 #define K_F11         1021
 #define K_F12         1022
+#define K_CTRL_SHIFT_C 1023
 #define K_ALT_BASE    2000
 
 #define PANE_HEX   0
@@ -137,6 +138,8 @@ I64 ReadKey();
 U0 YankToFilePrompt();
 U0 FillMarkedRegionPrompt();
 U0 TruncateFilePrompt();
+U0 CopyMarkedRegionToSystemClipboard();
+U0 DeleteBackwardBytes(I64 n);
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -851,6 +854,148 @@ U0 TruncateFilePrompt()
   snprintf(g->status, 255, "truncate: new size 0x%lx", g->len);
 }
 
+U8 *Base64Encode(U8 *src, I64 n, I64 *out_len)
+{
+  U8 *tbl = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  I64 enc_len;
+  I64 i = 0, j = 0;
+  U8 *out;
+
+  if (n < 0) n = 0;
+  enc_len = ((n + 2) / 3) * 4;
+  out = malloc(enc_len + 1)(U8*);
+  if (!out) return NULL;
+
+  while (i < n) {
+    I64 a = src[i++] & 0xFF;
+    I64 b = -1;
+    I64 c = -1;
+    I64 triple;
+    if (i < n) b = src[i++] & 0xFF;
+    if (i < n) c = src[i++] & 0xFF;
+
+    triple = (a << 16);
+    if (b >= 0) triple |= (b << 8);
+    if (c >= 0) triple |= c;
+
+    out[j++] = tbl[(triple >> 18) & 63];
+    out[j++] = tbl[(triple >> 12) & 63];
+    if (b >= 0) out[j++] = tbl[(triple >> 6) & 63];
+    else out[j++] = '=';
+    if (c >= 0) out[j++] = tbl[triple & 63];
+    else out[j++] = '=';
+  }
+
+  out[j] = 0;
+  if (out_len) *out_len = j;
+  return out;
+}
+
+Bool SetSystemClipboardBytes(U8 *data, I64 n)
+{
+  U8 *enc;
+  I64 enc_len = 0;
+
+  if (!data || n <= 0) return FALSE;
+
+  enc = Base64Encode(data, n, &enc_len);
+  if (!enc) return FALSE;
+
+  WriteStr("\x1b]52;c;");
+  write(1, enc, enc_len);
+  WriteStr("\x07");
+  free(enc);
+  return TRUE;
+}
+
+U0 CopyMarkedRegionToSystemClipboard()
+{
+  Editor *g = _G();
+  I64 a, b, n, i, pos;
+  U8 *tmp;
+  U8 hx[3];
+
+  if (!g->mark_on) {
+    SetStatus("copy: no mark set");
+    return;
+  }
+
+  a = g->mark_pos;
+  b = g->cur;
+  if (a > b) {
+    I64 t = a;
+    a = b;
+    b = t;
+  }
+  if (b <= a) {
+    SetStatus("copy: empty region");
+    return;
+  }
+
+  n = b - a;
+  if (g->pane == PANE_HEX) {
+    tmp = malloc(n * 3)(U8*);
+    if (!tmp) {
+      SetStatus("copy: out of memory");
+      return;
+    }
+    pos = 0;
+    for (i = 0; i < n; ++i) {
+      snprintf(hx, 3, "%02x", g->buf[a + i] & 0xFF);
+      tmp[pos++] = hx[0];
+      tmp[pos++] = hx[1];
+      if (i + 1 < n) tmp[pos++] = ' ';
+    }
+    if (!SetSystemClipboardBytes(tmp, pos)) {
+      free(tmp);
+      SetStatus("copy: system clipboard failed");
+      return;
+    }
+    free(tmp);
+  } else {
+    if (!SetSystemClipboardBytes(g->buf + a, n)) {
+      SetStatus("copy: system clipboard failed");
+      return;
+    }
+  }
+
+  SetStatus("copied to system clipboard");
+}
+
+U0 DeleteBackwardBytes(I64 n)
+{
+  Editor *g = _G();
+  I64 start;
+  I64 del;
+
+  if (g->readonly) {
+    SetStatus("readonly: cannot delete");
+    return;
+  }
+  if (n <= 0) return;
+  if (g->cur <= 0) return;
+
+  start = g->cur - n;
+  if (start < 0) start = 0;
+  del = g->cur - start;
+  if (del <= 0) return;
+
+  if (g->cur < g->len) {
+    memmove(g->buf + start, g->buf + g->cur, g->len - g->cur);
+  }
+  g->len -= del;
+  g->cur = start;
+  g->hex_half = 0;
+  g->dirty = TRUE;
+
+  if (g->mark_on && (g->mark_pos > g->len || g->cur > g->len)) {
+    g->mark_on = FALSE;
+  }
+
+  KeepVisible();
+  snprintf(g->status, 255, "deleted %ld bytes", del);
+}
+
 U0 MoveCursor(I64 delta)
 {
   Editor *g = _G();
@@ -1006,15 +1151,33 @@ I64 ReadKey()
     }
 
     if (s1 >= '0' && s1 <= '9') {
-      I64 code = s1 - '0';
+      I64 params[4];
+      I64 pcount = 1;
       U8 ch;
+      params[0] = s1 - '0';
       while (TRUE) {
         if (read(0, &ch, 1) != 1) return K_ESC;
         if (ch >= '0' && ch <= '9') {
-          code = code * 10 + (ch - '0');
+          params[pcount - 1] = params[pcount - 1] * 10 + (ch - '0');
           continue;
         }
+        if (ch == ';') {
+          if (pcount < 4) params[pcount++] = 0;
+          continue;
+        }
+        if (ch == 'u') {
+          if (pcount >= 2) {
+            I64 code_u = params[0];
+            I64 mod_u = params[1];
+            if (mod_u == 6 && (code_u == 67 || code_u == 99)) return K_CTRL_SHIFT_C;
+          }
+          return K_ESC;
+        }
         if (ch == '~') {
+          I64 code = params[0];
+          if (code == 27 && pcount >= 3) {
+            if (params[1] == 6 && (params[2] == 67 || params[2] == 99)) return K_CTRL_SHIFT_C;
+          }
           if (code == 1 || code == 7) return K_HOME;
           if (code == 2) return K_INSERT;
           if (code == 3) return K_DELETE;
@@ -1033,19 +1196,6 @@ I64 ReadKey()
           if (code == 21) return K_F10;
           if (code == 23) return K_F11;
           if (code == 24) return K_F12;
-          return K_ESC;
-        }
-        if (ch == ';') {
-          while (TRUE) {
-            if (read(0, &ch, 1) != 1) return K_ESC;
-            if (ch >= 'A' && ch <= 'Z') break;
-            if (ch >= 'a' && ch <= 'z') break;
-            if (ch == '~') break;
-          }
-          if (ch == '~') {
-            if (code == 5) return K_PAGE_UP;
-            if (code == 6) return K_PAGE_DOWN;
-          }
           return K_ESC;
         }
         return K_ESC;
@@ -1294,6 +1444,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == 127 || k == 8) {
+    DeleteBackwardBytes(1);
+    return;
+  }
+
   if (k == 3) {
     if (g->dirty && !g->quit_confirm) {
       g->quit_confirm = TRUE;
@@ -1471,6 +1626,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == K_CTRL_SHIFT_C) {
+    CopyMarkedRegionToSystemClipboard();
+    return;
+  }
+
   if (k == K_ALT_BASE + 'w' || k == K_ALT_BASE + 'W') {
     CopyMarkedRegion();
     return;
@@ -1530,6 +1690,11 @@ U0 ProcessKey(I64 k, Bool *running)
       KeepVisible();
       SetStatus("quoted insert");
     }
+    return;
+  }
+
+  if (k == K_ALT_BASE + 8) {
+    DeleteBackwardBytes(4);
     return;
   }
 
