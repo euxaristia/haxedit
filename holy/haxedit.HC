@@ -2154,7 +2154,7 @@ U0 InitEditor(U8 *path)
   g->pane = PANE_HEX;
   g->bpl = 16;
   g->bpl_auto = TRUE;
-  g->readonly = FALSE;
+  g->readonly = 0;
   g->colored = FALSE;
   g->top = 0;
   g->cur = 0;
@@ -2186,7 +2186,7 @@ I32 Main(I32 argc, U8 **argv)
       if (i < argc) file = argv[i];
       break;
     } else if (!strcmp(arg, "-r") || !strcmp(arg, "--readonly")) {
-      req_readonly = TRUE;
+      req_readonly = 1;
     } else if (!strcmp(arg, "-s") || !strcmp(arg, "--sector")) {
       req_bpl = 16;
       req_auto = FALSE;
