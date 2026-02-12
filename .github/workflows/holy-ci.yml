@@ -64,6 +64,12 @@ jobs:
           if [ -d ./build ] && [ -f ./build/Makefile ]; then
             make -C ./build -j"$(nproc)" || true
           fi
+          if [ -f Makefile ] || [ -f makefile ]; then
+            sudo make install || true
+          fi
+          if [ -d ./build ] && [ -f ./build/Makefile ]; then
+            sudo make -C ./build install || true
+          fi
 
           # Install compiler binary from common locations.
           if [ -x ./hcc ]; then
@@ -97,6 +103,21 @@ jobs:
             sudo install -D -m 0644 "${tos_hh_path}" /usr/local/include/tos.HH
           fi
 
+          # Install/symlink libtos runtime expected by hcc link stage (-ltos).
+          sudo mkdir -p /usr/local/lib
+          while IFS= read -r lib; do
+            base="$(basename "${lib}")"
+            sudo install -m 0644 "${lib}" "/usr/local/lib/${base}" || true
+          done < <(find /tmp/hcc-src -type f \( -name 'libtos.a' -o -name 'libtos.so' -o -name 'libtos.so.*' \) | sort -u)
+          # If lib ended up under /usr/local/lib64, bridge it into /usr/local/lib.
+          if [ ! -e /usr/local/lib/libtos.a ] && [ -e /usr/local/lib64/libtos.a ]; then
+            sudo ln -sf /usr/local/lib64/libtos.a /usr/local/lib/libtos.a
+          fi
+          if [ ! -e /usr/local/lib/libtos.so ] && [ -e /usr/local/lib64/libtos.so ]; then
+            sudo ln -sf /usr/local/lib64/libtos.so /usr/local/lib/libtos.so
+          fi
+          sudo ldconfig || true
+
           if ! command -v hcc >/dev/null 2>&1; then
             echo "hcc installation failed. Update holy-ci.yml with your canonical hcc bootstrap."
             exit 1
@@ -112,6 +133,7 @@ jobs:
           command -v rg
           command -v xxd
           test -f /usr/local/include/tos.HH
+          test -f /usr/local/lib/libtos.a -o -f /usr/local/lib/libtos.so
 
       - name: Build
         run: make build
