@@ -131,6 +131,7 @@ class Editor
   I64 mouse_start_pos;
   I64 mouse_start_pane;
   Bool sector_mode;
+  Bool suppress_keep_visible_once;
   U8 status[256];
 };
 
@@ -162,6 +163,7 @@ U0 JumpToLineEnd(I64 bpl);
 U0 RecenterOnCursor(I64 bpl);
 U0 HandleMouseKey();
 I64 ViewBpl();
+U0 ScrollViewportLines(I64 lines);
 U8 *ColorSeqForByte(U8 b);
 U8 *BaseName(U8 *path);
 U0 WriteLineFd(I32 fd, U8 *s);
@@ -1181,6 +1183,14 @@ U0 HandleMouseKey()
   I64 row, col, bpl, hex_start, ascii_start, idx, pane, line_idx, off, loc;
 
   if (g->mouse_kind < 0) return;
+  if (g->mouse_kind == 3) {  /* wheel up */
+    ScrollViewportLines(-3);
+    return;
+  }
+  if (g->mouse_kind == 4) {  /* wheel down */
+    ScrollViewportLines(3);
+    return;
+  }
 
   row = g->mouse_row;
   col = g->mouse_col;
@@ -1245,6 +1255,27 @@ U0 HandleMouseKey()
   }
 }
 
+U0 ScrollViewportLines(I64 lines)
+{
+  Editor *g = _G();
+  I64 bpl = ViewBpl();
+  I64 max_top;
+  I64 top;
+
+  if (lines == 0) return;
+  if (bpl <= 0) return;
+
+  top = g->top + lines * bpl;
+  if (top < 0) top = 0;
+
+  max_top = (g->len / bpl) * bpl;
+  if (max_top < 0) max_top = 0;
+  if (top > max_top) top = max_top;
+
+  g->top = top;
+  g->suppress_keep_visible_once = TRUE;
+}
+
 U8 *ColorSeqForByte(U8 b)
 {
   if (b == 0) return "\x1b[31m";           /* null */
@@ -1299,9 +1330,9 @@ U0 PrintUsage(I32 fd, U8 *prog)
   WriteLineFd(fd, line);
   WriteLineFd(fd, "  -r, --readonly       open read-only\n");
   WriteLineFd(fd, "  -s, --sector         sector layout (fixed 16-byte lines)\n");
-  WriteLineFd(fd, "  -m, --maximize       auto line length from terminal width\n");
+  WriteLineFd(fd, "  -m, --maximise       auto line length from terminal width\n");
   WriteLineFd(fd, "  -lN, --linelength N  set line length (0 = auto)\n");
-  WriteLineFd(fd, "  --color              enable byte-class color highlights\n");
+  WriteLineFd(fd, "  --colour             enable byte-class colour highlights\n");
   WriteLineFd(fd, "  -h, --help           show this help\n");
 }
 
@@ -1437,7 +1468,11 @@ I64 ReadKey()
       if (y > 0) g->mouse_row = y - 1;
 
       /* SGR mouse: release may be '<...m' OR button=3 with 'M' on some terminals. */
-      if (ch == 'm' || ((b & 3) == 3)) {
+      if (b & 64) {
+        /* SGR wheel: 64=up, 65=down. Keep cursor fixed; scroll viewport only. */
+        if (b & 1) g->mouse_kind = 4;
+        else g->mouse_kind = 3;
+      } else if (ch == 'm' || ((b & 3) == 3)) {
         g->mouse_kind = 2;                /* release */
       } else if ((b & 32) && ((b & 3) == 0)) {
         g->mouse_kind = 1;                /* left-button drag */
@@ -2138,10 +2173,10 @@ I32 Main(I32 argc, U8 **argv)
       req_bpl = 16;
       req_auto = FALSE;
       req_sector_mode = TRUE;
-    } else if (!strcmp(arg, "-m") || !strcmp(arg, "--maximize")) {
+    } else if (!strcmp(arg, "-m") || !strcmp(arg, "--maximise")) {
       req_auto = TRUE;
       req_sector_mode = FALSE;
-    } else if (!strcmp(arg, "--color")) {
+    } else if (!strcmp(arg, "--colour")) {
       req_colored = TRUE;
     } else if (StartsWith(arg, "-l") && strlen(arg) > 2) {
       U8 *end = NULL;
@@ -2212,7 +2247,7 @@ I32 Main(I32 argc, U8 **argv)
 
   InitEditor(file);
   if (req_sector_mode) {
-    /* Match original behavior: sector layout uses fixed 16-byte lines. */
+    /* Match original behaviour: sector layout uses fixed 16-byte lines. */
     req_bpl = 16;
     req_auto = FALSE;
   }
@@ -2227,7 +2262,11 @@ I32 Main(I32 argc, U8 **argv)
 
   Bool running = TRUE;
   while (running) {
-    KeepVisible();
+    if (g->suppress_keep_visible_once) {
+      g->suppress_keep_visible_once = FALSE;
+    } else {
+      KeepVisible();
+    }
     DrawScreen();
     I64 k = ReadKey();
     ProcessKey(k, &running);

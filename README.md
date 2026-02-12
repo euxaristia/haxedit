@@ -19,9 +19,9 @@ HaxEdit maintains the features of the original `hexedit` while providing a moder
     - Cut, Copy, Paste (internal clipboard).
     - Fill selection with pattern.
 - **Display**:
-    - Colored output support (`--color`).
+    - Coloured output support (`--colour`).
     - Sector view (`--sector`).
-    - Customizable line length.
+    - Customisable line length.
     - Resizable terminal support (SIGWINCH).
 
 ## Installation
@@ -47,10 +47,10 @@ haxedit [options] <filename>
 
 **Options:**
 - `-s`, `--sector`: Sector layout with fixed 16-byte lines.
-- `-m`, `--maximize`: Maximize the display.
+- `-m`, `--maximise`: Maximise the display.
 - `-l<n>`, `--linelength <n>`: Explicitly set the number of bytes to display per line.
 - `-r`, `--readonly`: Open file in read-only mode.
-- `--color`: Display colors (if supported).
+- `--colour`: Display colours (if supported).
 - `-h`, `--help`: Show usage.
 
 **Key Bindings:**

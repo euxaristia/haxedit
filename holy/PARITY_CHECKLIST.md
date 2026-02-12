@@ -1,16 +1,16 @@
 # HolyC Parity Checklist
 
-Tracks user-visible behavior parity against the legacy implementation.
+Tracks user-visible behaviour parity against the legacy implementation.
 
 ## CLI and Startup
 
 - [x] `-h`, `--help` usage output
 - [x] `-r`, `--readonly`
 - [x] `-s`, `--sector`
-- [x] `-m`, `--maximize`
+- [x] `-m`, `--maximise`
 - [x] `-lN`, `--linelength N`
 - [x] `--linelength 0` (auto)
-- [x] `--color`
+- [x] `--colour`
 - [x] `--` option terminator
 - [x] Prompt for file when no filename provided
 
@@ -58,8 +58,8 @@ Tracks user-visible behavior parity against the legacy implementation.
 
 - [x] Status line with cursor/size/percent
 - [x] Sector status suffix in sector mode
-- [x] Colorized byte classes under `--color`
-- [x] Preserve color mode across open-file prompt transitions
+- [x] Colourised byte classes under `--colour`
+- [x] Preserve colour mode across open-file prompt transitions
 - [x] Selection and ghost-highlight rendering
 
 ## Automation
