@@ -166,6 +166,9 @@ U8 *ColorSeqForByte(U8 b);
 U8 *BaseName(U8 *path);
 U0 WriteLineFd(I32 fd, U8 *s);
 U0 PrintUsage(I32 fd, U8 *prog);
+U0 WriteRepeatChar(U8 ch, I64 n);
+U0 WriteCenteredLabel(U8 *label, I64 width);
+U0 DrawPanelHeader(I64 bpl);
 
 U0 PushUndoOverwrite(I64 pos, U8 old_b, U8 new_b)
 {
@@ -1247,6 +1250,39 @@ U0 WriteLineFd(I32 fd, U8 *s)
   write(fd, s, strlen(s));
 }
 
+U0 WriteRepeatChar(U8 ch, I64 n)
+{
+  I64 i;
+  for (i = 0; i < n; ++i) write(1, &ch, 1);
+}
+
+U0 WriteCenteredLabel(U8 *label, I64 width)
+{
+  I64 len = strlen(label);
+  I64 left, right;
+  if (width <= 0) return;
+  if (len >= width) {
+    write(1, label, width);
+    return;
+  }
+  left = (width - len) / 2;
+  right = width - len - left;
+  WriteRepeatChar(' ', left);
+  WriteStr(label);
+  WriteRepeatChar(' ', right);
+}
+
+U0 DrawPanelHeader(I64 bpl)
+{
+  U8 tmp[32];
+  snprintf(tmp, 31, "%-8s  ", "OFFSET");
+  WriteStr(tmp);
+  WriteCenteredLabel("HEX", 3 * bpl);
+  WriteStr(" |");
+  WriteCenteredLabel("ASCII", bpl);
+  WriteStr("|\x1b[K\r\n");
+}
+
 U0 PrintUsage(I32 fd, U8 *prog)
 {
   U8 line[512];
@@ -1631,7 +1667,8 @@ U0 DrawScreen()
   }
 
   I64 vrows = 1;
-  if (g->rows > 1) vrows = g->rows - 1;
+  if (g->rows > 2) vrows = g->rows - 2;
+  DrawPanelHeader(bpl);
   I64 r;
   for (r = 0; r < vrows; ++r) {
     I64 off = g->top + r * bpl;
