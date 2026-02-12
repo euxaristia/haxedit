@@ -742,6 +742,18 @@ U8 PrintCh(U8 b)
   return '.';
 }
 
+U8 *BaseName(U8 *path)
+{
+  I64 i = 0;
+  I64 last = 0;
+  if (!path) return "";
+  while (path[i]) {
+    if (path[i] == '/') last = i + 1;
+    i++;
+  }
+  return path + last;
+}
+
 U0 DrawLine(I64 off)
 {
   Editor *g = _G();
@@ -754,10 +766,11 @@ U0 DrawLine(I64 off)
     I64 idx = off + i;
     if (idx < g->len) {
       Bool sel = (idx == g->cur && g->pane == PANE_HEX);
+      I64 hv = g->buf[idx] & 0xFF;
       if (sel) {
-        snprintf(tmp, 255, "\x1b[7m%02x\x1b[0m ", g->buf[idx]);
+        snprintf(tmp, 255, "\x1b[7m%02x\x1b[0m ", hv);
       } else {
-        snprintf(tmp, 255, "%02x ", g->buf[idx]);
+        snprintf(tmp, 255, "%02x ", hv);
       }
       WriteStr(tmp);
     } else {
@@ -787,38 +800,30 @@ U0 DrawScreen()
 {
   Editor *g = _G();
   U8 tmp[512];
-  U8 *pane_name;
-  U8 *dirty_text;
-  U8 *mark_text;
-  U8 *ro_text;
+  U8 status_line[512];
+  U8 *name;
+  I64 pct;
+  I64 cur_disp;
+  I64 end_disp;
+  I64 used;
+  I64 pad_left;
+  I64 pad_right;
   RefreshSize();
   RecalcBpl();
 
   WriteStr("\x1b[?25l\x1b[H");
 
-  pane_name = "HEX";
-  if (g->pane == PANE_ASCII) pane_name = "ASCII";
-  mark_text = "off";
-  if (g->mark_on) mark_text = "on";
-  ro_text = "";
-  if (g->readonly) ro_text = "[RO]";
-  dirty_text = "";
-  if (g->dirty) dirty_text = "[modified]";
-
-  snprintf(tmp, 511,
-    "\x1b[1m%s\x1b[0m  len=%ld  cur=0x%lx  bpl=%ld  pane=%s  mark=%s  %s %s\r\n",
-    g->path,
-    g->len,
-    g->cur,
-    g->bpl,
-    pane_name,
-    mark_text,
-    ro_text,
-    dirty_text);
-  WriteStr(tmp);
+  pct = 0;
+  if (g->len <= 1) {
+    if (g->len == 1 && g->cur > 0) pct = 100;
+  } else {
+    pct = (g->cur * 100) / (g->len - 1);
+    if (pct < 0) pct = 0;
+    if (pct > 100) pct = 100;
+  }
 
   I64 vrows = 1;
-  if (g->rows > 2) vrows = g->rows - 2;
+  if (g->rows > 1) vrows = g->rows - 1;
   I64 r;
   for (r = 0; r < vrows; ++r) {
     I64 off = g->top + r * g->bpl;
@@ -830,13 +835,23 @@ U0 DrawScreen()
     }
   }
 
+  name = BaseName(g->path);
+  cur_disp = g->cur;
+  end_disp = 0;
+  if (g->len) end_disp = g->len - 1;
+  snprintf(status_line, 511, "%s --0x%lX/0x%lX--%ld%%", name, cur_disp, end_disp, pct);
+  used = strlen(status_line);
+  if (used > g->cols) used = g->cols;
+  pad_left = (g->cols - used) / 2;
+  if (pad_left < 0) pad_left = 0;
+  pad_right = g->cols - used - pad_left;
+  if (pad_right < 0) pad_right = 0;
+
   WriteStr("\x1b[7m");
-  if (strlen(g->status) > 0) {
-    WriteStr(g->status);
-  } else {
-    WriteStr("Ctrl+S save | Ctrl+X save+quit | Ctrl+C quit | / search | v/y/p mark-copy-paste");
-  }
-  WriteStr("\x1b[0m\x1b[K");
+  for (r = 0; r < pad_left; ++r) write(1, "-", 1);
+  write(1, status_line, used);
+  for (r = 0; r < pad_right; ++r) write(1, "-", 1);
+  WriteStr("\x1b[0m");
 }
 
 U0 ProcessKey(I64 k, Bool *running)
