@@ -102,7 +102,7 @@ smoke: $(BINARY)
 	@grep -aF -q "$$(printf '\033[32m11\033[0m')" /tmp/haxedit-colour.log || { echo "Smoke failed: --colour missing expected control-byte highlight"; exit 1; }
 	@dd if=/dev/zero of=/tmp/haxedit-wheel.bin bs=1 count=4096 status=none
 	@bash -lc '{ printf "\033[<65;20;5M"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) -l16 /tmp/haxedit-wheel.bin" /tmp/haxedit-wheel.log' >/dev/null
-	@strings /tmp/haxedit-wheel.log | rg -q -- "^00000030" || { echo "Smoke failed: mouse wheel did not scroll viewport"; exit 1; }
+	@strings /tmp/haxedit-wheel.log | rg -q -- "00000030" || { echo "Smoke failed: mouse wheel did not scroll viewport"; exit 1; }
 	@bash -lc '{ printf "\r1\r"; sleep 0.2; printf "\r5\r"; sleep 0.2; printf "\033f"; sleep 0.2; printf "\026"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) -s /tmp/haxedit-sector.bin" /tmp/haxedit-sector.log' >/dev/null
 	@strings /tmp/haxedit-sector.log | rg -q -- "goto sector:" || { echo "Smoke failed: goto sector prompt not shown"; exit 1; }
 	@strings /tmp/haxedit-sector.log | rg -q -- "--0x200/0x800--25%--sector 1" || { echo "Smoke failed: sector goto 1 did not land on 0x200"; exit 1; }

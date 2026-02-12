@@ -47,6 +47,8 @@
 #define UNDO_DATA_MAX 4096
 #define SIGTSTP 20
 #define SECTOR_SIZE 512
+#define LAYOUT_LEFT_PAD 1
+#define LAYOUT_RIGHT_PAD 1
 
 #define UNDO_OP_OVERWRITE 1
 #define UNDO_OP_INSERT    2
@@ -171,6 +173,7 @@ U0 PrintUsage(I32 fd, U8 *prog);
 U0 WriteRepeatChar(U8 ch, I64 n);
 U0 WriteCenteredLabel(U8 *label, I64 width);
 U0 DrawPanelHeader(I64 bpl);
+I64 LayoutSep(I64 bpl);
 
 U0 PushUndoOverwrite(I64 pos, U8 old_b, U8 new_b)
 {
@@ -306,7 +309,7 @@ U0 RecalcBpl()
   if (!g->bpl_auto) return;
 
   /* Layout width: offset(8)+gap(1)+hex(3*bpl)+gap(1)+ascii(bpl), plus right padding. */
-  I64 usable = g->cols - 12; /* keep at least ~2 columns free at right edge */
+  I64 usable = g->cols - (10 + LAYOUT_LEFT_PAD + LAYOUT_RIGHT_PAD);
   I64 bpl = usable / 4;
   if (bpl < 4) bpl = 4;
   if (bpl > 4096) bpl = 4096;
@@ -1180,7 +1183,7 @@ U0 RecenterOnCursor(I64 bpl)
 U0 HandleMouseKey()
 {
   Editor *g = _G();
-  I64 row, col, bpl, hex_start, ascii_start, idx, pane, line_idx, off, loc;
+  I64 row, col, bpl, hex_start, ascii_start, sep, idx, pane, line_idx, off, loc;
 
   if (g->mouse_kind < 0) return;
   if (g->mouse_kind == 3) {  /* wheel up */
@@ -1195,8 +1198,9 @@ U0 HandleMouseKey()
   row = g->mouse_row;
   col = g->mouse_col;
   bpl = ViewBpl();
-  hex_start = 9;
-  ascii_start = hex_start + 3 * bpl + 1;
+  sep = LayoutSep(bpl);
+  hex_start = LAYOUT_LEFT_PAD + 9;
+  ascii_start = hex_start + 3 * bpl + sep;
   idx = -1;
   pane = g->pane;
 
@@ -1301,6 +1305,15 @@ U0 WriteRepeatChar(U8 ch, I64 n)
   for (i = 0; i < n; ++i) write(1, &ch, 1);
 }
 
+I64 LayoutSep(I64 bpl)
+{
+  Editor *g = _G();
+  I64 base = LAYOUT_LEFT_PAD + 9 + 3 * bpl + 1 + bpl + LAYOUT_RIGHT_PAD;
+  I64 slack = g->cols - base;
+  if (slack < 0) slack = 0;
+  return 1 + slack;
+}
+
 U0 WriteCenteredLabel(U8 *label, I64 width)
 {
   I64 len = strlen(label);
@@ -1320,11 +1333,14 @@ U0 WriteCenteredLabel(U8 *label, I64 width)
 U0 DrawPanelHeader(I64 bpl)
 {
   U8 tmp[32];
+  I64 sep = LayoutSep(bpl);
+  WriteRepeatChar(' ', LAYOUT_LEFT_PAD);
   snprintf(tmp, 31, "%-8s ", "OFFSET");
   WriteStr(tmp);
   WriteCenteredLabel("HEX", 3 * bpl);
-  WriteStr(" ");
+  WriteRepeatChar(' ', sep);
   WriteCenteredLabel("ASCII", bpl);
+  WriteRepeatChar(' ', LAYOUT_RIGHT_PAD);
   WriteStr("\x1b[K\r\n");
 }
 
@@ -1602,6 +1618,7 @@ U0 DrawLine(I64 off)
   Editor *g = _G();
   U8 tmp[256];
   I64 bpl = ViewBpl();
+  I64 sep = LayoutSep(bpl);
   I64 sel_min = 0;
   I64 sel_max = -1;
   Bool have_sel = FALSE;
@@ -1621,6 +1638,7 @@ U0 DrawLine(I64 off)
     }
   }
 
+  WriteRepeatChar(' ', LAYOUT_LEFT_PAD);
   snprintf(tmp, 255, "%08lx ", off);
   WriteStr(tmp);
 
@@ -1654,7 +1672,7 @@ U0 DrawLine(I64 off)
     }
   }
 
-  WriteStr(" ");
+  WriteRepeatChar(' ', sep);
 
   for (i = 0; i < bpl; ++i) {
     I64 idx = off + i;
@@ -1685,6 +1703,7 @@ U0 DrawLine(I64 off)
     write(1, &ch, 1);
     if (active_sel || active_mark || ghost_sel || ghost_mark || colored_style) WriteStr("\x1b[0m");
   }
+  WriteRepeatChar(' ', LAYOUT_RIGHT_PAD);
   WriteStr("\x1b[K\r\n");
 }
 
@@ -1725,7 +1744,10 @@ U0 DrawScreen()
     if (off < g->len || off == crow_base) {
       DrawLine(off);
     } else {
-      WriteStr("~\x1b[K\r\n");
+      WriteRepeatChar(' ', LAYOUT_LEFT_PAD);
+      WriteStr("~");
+      WriteRepeatChar(' ', LAYOUT_RIGHT_PAD);
+      WriteStr("\x1b[K\r\n");
     }
   }
 
