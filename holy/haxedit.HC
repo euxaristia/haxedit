@@ -136,6 +136,7 @@ U0 ShowHelp();
 I64 ReadKey();
 U0 YankToFilePrompt();
 U0 FillMarkedRegionPrompt();
+U0 TruncateFilePrompt();
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 
@@ -808,6 +809,46 @@ U0 FillMarkedRegionPrompt()
   }
   g->dirty = TRUE;
   snprintf(g->status, 255, "fill: wrote %ld bytes", n);
+}
+
+U0 TruncateFilePrompt()
+{
+  Editor *g = _G();
+  U8 query[128];
+  U8 *end = NULL;
+  I64 base = 10;
+  I64 off;
+
+  if (g->readonly) {
+    SetStatus("readonly: cannot truncate");
+    return;
+  }
+
+  if (PromptLine("truncate at offset: ", query, 128) <= 0) {
+    SetStatus("truncate: cancelled");
+    return;
+  }
+
+  if (query[0] == '0' && (query[1] == 'x' || query[1] == 'X')) {
+    base = 16;
+  }
+  off = strtoll(query, &end, base);
+  if (end == query || *end != 0) {
+    SetStatus("truncate: invalid number");
+    return;
+  }
+  if (off < 0) off = 0;
+  if (off > g->len) off = g->len;
+
+  g->len = off;
+  if (g->cur > g->len) g->cur = g->len;
+  g->hex_half = 0;
+  if (g->mark_on && (g->mark_pos >= g->len || g->cur >= g->len)) {
+    g->mark_on = FALSE;
+  }
+  g->dirty = TRUE;
+  KeepVisible();
+  snprintf(g->status, 255, "truncate: new size 0x%lx", g->len);
 }
 
 U0 MoveCursor(I64 delta)
@@ -1493,7 +1534,7 @@ U0 ProcessKey(I64 k, Bool *running)
   }
 
   if (k == K_ALT_BASE + 't' || k == K_ALT_BASE + 'T') {
-    SetStatus("truncate: not implemented yet");
+    TruncateFilePrompt();
     return;
   }
 
