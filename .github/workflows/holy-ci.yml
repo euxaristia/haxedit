@@ -61,8 +61,40 @@ jobs:
           if [ -f Makefile ] || [ -f makefile ]; then
             make -j"$(nproc)" || true
           fi
+          if [ -d ./build ] && [ -f ./build/Makefile ]; then
+            make -C ./build -j"$(nproc)" || true
+          fi
+
+          # Install compiler binary from common locations.
           if [ -x ./hcc ]; then
             sudo install -m 0755 ./hcc /usr/local/bin/hcc
+          fi
+          if [ -x ./build/hcc ]; then
+            sudo install -m 0755 ./build/hcc /usr/local/bin/hcc
+          fi
+
+          # Install include tree expected by hcc (/usr/local/include/tos.HH etc).
+          if [ -d ./include ]; then
+            sudo mkdir -p /usr/local/include
+            sudo cp -a ./include/. /usr/local/include/
+          fi
+          if [ -d ./src/include ]; then
+            sudo mkdir -p /usr/local/include
+            sudo cp -a ./src/include/. /usr/local/include/
+          fi
+          if [ -d ./lude ]; then
+            sudo mkdir -p /usr/local/include/lude
+            sudo cp -a ./lude/. /usr/local/include/lude/
+          fi
+          if [ -d ./src/lude ]; then
+            sudo mkdir -p /usr/local/include/lude
+            sudo cp -a ./src/lude/. /usr/local/include/lude/
+          fi
+
+          # Fallback: locate tos.HH anywhere in source tree and install it.
+          tos_hh_path="$(find /tmp/hcc-src -type f -name tos.HH | head -n1 || true)"
+          if [ -n "${tos_hh_path}" ]; then
+            sudo install -D -m 0644 "${tos_hh_path}" /usr/local/include/tos.HH
           fi
 
           if ! command -v hcc >/dev/null 2>&1; then
@@ -79,6 +111,7 @@ jobs:
           command -v strings
           command -v rg
           command -v xxd
+          test -f /usr/local/include/tos.HH
 
       - name: Build
         run: make build
