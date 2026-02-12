@@ -33,6 +33,10 @@
 #define K_F11         1021
 #define K_F12         1022
 #define K_CTRL_SHIFT_C 1023
+#define K_ALT_ARROW_LEFT 1024
+#define K_ALT_ARROW_RIGHT 1025
+#define K_ALT_ARROW_UP 1026
+#define K_ALT_ARROW_DOWN 1027
 #define K_ALT_BASE    2000
 
 #define PANE_HEX   0
@@ -1118,7 +1122,16 @@ I64 ReadKey()
   U8 s0, s1;
   if (read(0, &s0, 1) != 1) return K_ESC;
   if (s0 != '[' && s0 != 'O') {
-    if (s0 == 27) return K_ESC;
+    if (s0 == 27) {
+      U8 t0, t1;
+      if (read(0, &t0, 1) == 1 && t0 == '[' && read(0, &t1, 1) == 1) {
+        if (t1 == 'A') return K_ALT_ARROW_UP;
+        if (t1 == 'B') return K_ALT_ARROW_DOWN;
+        if (t1 == 'C') return K_ALT_ARROW_RIGHT;
+        if (t1 == 'D') return K_ALT_ARROW_LEFT;
+      }
+      return K_ESC;
+    }
     return K_ALT_BASE + s0;
   }
   if (read(0, &s1, 1) != 1) return K_ESC;
@@ -1749,6 +1762,10 @@ U0 ProcessKey(I64 k, Bool *running)
   if (k == 2) { MoveCursor(-1); KeepVisible(); return; }     /* Ctrl+B */
   if (k == 14) { MoveCursor(bpl); KeepVisible(); return; }   /* Ctrl+N */
   if (k == 16) { MoveCursor(-bpl); KeepVisible(); return; }  /* Ctrl+P */
+  if (k == K_ALT_ARROW_RIGHT) { MoveCursor(4); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_LEFT) { MoveCursor(-4); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_DOWN) { MoveCursor(4 * bpl); KeepVisible(); return; }
+  if (k == K_ALT_ARROW_UP) { MoveCursor(-4 * bpl); KeepVisible(); return; }
   if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursor(4); KeepVisible(); return; }
   if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursor(-4); KeepVisible(); return; }
   if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursor(4 * bpl); KeepVisible(); return; }
