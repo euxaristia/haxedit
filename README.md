@@ -33,9 +33,10 @@ Requirements: Linux x86_64 and `hcc` (HolyC compiler)
 ```bash
 git clone https://github.com/euxaristia/haxedit.git
 cd haxedit
-make build
-cp ./haxedit /usr/local/bin/haxedit
+make install
 ```
+
+This installs `haxedit` to `~/.local/bin/` (ensure this is in your `$PATH`).
 
 The repository now ships a HolyC-only implementation targeting Linux.
 
