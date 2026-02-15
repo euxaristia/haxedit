@@ -1,4 +1,4 @@
-PREFIX ?= /usr/local
+PREFIX ?= $(HOME)/.local
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man/man1
 HCC ?= hcc
@@ -130,19 +130,9 @@ install: $(BINARY)
 	install -d $(MANDIR)
 	install -m 644 haxedit.1 $(MANDIR)/haxedit.1
 
-local-install: $(BINARY)
-	install -d $(HOME)/.local/bin
-	install $(BINARY) $(HOME)/.local/bin/haxedit
-	install -d $(HOME)/.local/share/man/man1
-	install -m 644 haxedit.1 $(HOME)/.local/share/man/man1/haxedit.1
-
 uninstall:
 	rm -f $(BINDIR)/haxedit
 	rm -f $(MANDIR)/haxedit.1
-
-local-uninstall:
-	rm -f $(HOME)/.local/bin/haxedit
-	rm -f $(HOME)/.local/share/man/man1/haxedit.1
 
 $(BINARY): $(HOLY_SOURCES)
 	@command -v $(HCC) >/dev/null 2>&1 || { echo "Error: $(HCC) not found in PATH"; exit 1; }
@@ -151,4 +141,4 @@ $(BINARY): $(HOLY_SOURCES)
 clean:
 	rm -f $(BINARY)
 
-.PHONY: all build test smoke smoke-ci install local-install uninstall local-uninstall clean
+.PHONY: all build test smoke smoke-ci install uninstall clean
