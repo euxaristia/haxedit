@@ -1529,12 +1529,18 @@ I64 ReadKey()
           continue;
         }
         if (ch == 'u') {
+          I64 code_u = params[0];
           if (pcount >= 2) {
-            I64 code_u = params[0];
             I64 mod_u = params[1];
             if (mod_u == 6 && (code_u == 67 || code_u == 99)) return K_CTRL_SHIFT_C;
             if (mod_u == 7 && IsCtrlAltHCode(code_u)) return K_ALT_BASE + 8; /* Ctrl+Alt+H */
+            if (mod_u == 5) {
+              if (code_u >= 'a' && code_u <= 'z') return code_u - 'a' + 1;
+              if (code_u >= 'A' && code_u <= 'Z') return code_u - 'A' + 1;
+              if (code_u == ' ') return 0;
+            }
           }
+          if (code_u < 256) return code_u;
           return K_ESC;
         }
         if (ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D' || ch == 'H' || ch == 'F') {
@@ -1560,6 +1566,11 @@ I64 ReadKey()
           if (code == 27 && pcount >= 3) {
             if (params[1] == 6 && (params[2] == 67 || params[2] == 99)) return K_CTRL_SHIFT_C;
             if (params[1] == 7 && IsCtrlAltHCode(params[2])) return K_ALT_BASE + 8;
+            if (params[1] == 5) {
+              if (params[2] >= 'a' && params[2] <= 'z') return params[2] - 'a' + 1;
+              if (params[2] >= 'A' && params[2] <= 'Z') return params[2] - 'A' + 1;
+            }
+            if (params[2] < 256) return params[2];
           }
           if (code == 1 || code == 7) return K_HOME;
           if (code == 2) return K_INSERT;
@@ -1852,6 +1863,11 @@ U0 ProcessKey(I64 k, Bool *running)
     return;
   }
 
+  if (k == K_CTRL_SHIFT_C) {
+    CopyMarkedRegionToSystemClipboard();
+    return;
+  }
+
   if (k == 3) {
     if (g->dirty && !g->quit_confirm) {
       g->quit_confirm = TRUE;
@@ -2002,11 +2018,6 @@ U0 ProcessKey(I64 k, Bool *running)
 
   if (k == 4 || (k == 'y' && g->pane == PANE_HEX)) {
     CopyMarkedRegion();
-    return;
-  }
-
-  if (k == K_CTRL_SHIFT_C) {
-    CopyMarkedRegionToSystemClipboard();
     return;
   }
 
