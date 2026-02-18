@@ -32,13 +32,13 @@ Quick TTY checks for key-dispatch and behaviour parity.
 - Start editor: `./haxedit /tmp/haxedit-smoke.bin`
 - Validate `>`:
   - Press `>`
-  - Expect status cursor `0x10/0x10`
+  - Expect status cursor `0xF/0x10`
 - Validate `<`:
   - Press `<`
   - Expect status cursor `0x0/0x10`
 - Validate `G` (hex pane):
   - Press `G`
-  - Expect status cursor `0x10/0x10`
+  - Expect status cursor `0xF/0x10`
 - Validate `Enter` goto:
   - Press `Enter`
   - At prompt, input `0x3` and press `Enter`

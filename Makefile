@@ -35,7 +35,7 @@ smoke: $(BINARY)
 	@dd if=/dev/zero of=/tmp/haxedit-open-save-b.bin bs=1 count=32 status=none
 	@bash -lc '{ printf "f"; sleep 0.15; printf "\017"; sleep 0.15; printf "y\r"; sleep 0.15; printf "/tmp/haxedit-open-save-b.bin\r"; sleep 0.2; printf ">"; sleep 0.15; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-open-save-a.bin" /tmp/haxedit-open-save.log' >/dev/null
 	@xxd -p -l 1 /tmp/haxedit-open-save-a.bin | rg -q -- "^f0$$" || { echo "Smoke failed: dirty Ctrl+O save-yes path did not save original file"; exit 1; }
-	@strings /tmp/haxedit-open-save.log | rg -q -- "--0x20/0x20--100%" || { echo "Smoke failed: dirty Ctrl+O save-yes path did not switch to new file"; exit 1; }
+	@strings /tmp/haxedit-open-save.log | rg -q -- "--0x1F/0x20--100%" || { echo "Smoke failed: dirty Ctrl+O save-yes path did not switch to new file"; exit 1; }
 	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-clip-a.bin
 	@dd if=/dev/zero of=/tmp/haxedit-clip-b.bin bs=1 count=16 status=none
 	@bash -lc '{ printf "\006"; sleep 0.1; printf "v"; sleep 0.1; printf "\006"; sleep 0.1; printf "\004"; sleep 0.1; printf "\017"; sleep 0.1; printf "/tmp/haxedit-clip-b.bin\r"; sleep 0.2; printf "\031"; sleep 0.1; printf "\030"; } | script -q -c "./$(BINARY) /tmp/haxedit-clip-a.bin" /tmp/haxedit-clip-open.log' >/dev/null
@@ -52,14 +52,14 @@ smoke: $(BINARY)
 	@strings /tmp/haxedit-dashfile.log | rg -q -- "--0x0/0x10--0%" || { echo "Smoke failed: -- terminator did not open dash-prefixed file"; exit 1; }
 	@dd if=/dev/zero of=/tmp/haxedit-sector.bin bs=1 count=2048 status=none
 	@bash -lc '{ printf ">"; sleep 0.15; printf "<"; sleep 0.15; printf "G"; sleep 0.15; printf "\r0x3\r"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-smoke.bin" /tmp/haxedit-smoke.log' >/dev/null
-	@strings /tmp/haxedit-smoke.log | rg -q -- "--0x10/0x10--100%" || { echo "Smoke failed: missing end-of-file cursor state for > or G"; exit 1; }
+	@strings /tmp/haxedit-smoke.log | rg -q -- "--0xF/0x10--100%" || { echo "Smoke failed: missing end-of-buffer cursor state for > or G"; exit 1; }
 	@strings /tmp/haxedit-smoke.log | rg -q -- "--0x0/0x10--0%" || { echo "Smoke failed: missing start-of-file cursor state for <"; exit 1; }
 	@strings /tmp/haxedit-smoke.log | rg -q -- "goto offset:" || { echo "Smoke failed: goto offset prompt not shown"; exit 1; }
 	@strings /tmp/haxedit-smoke.log | rg -q -- "--0x3/0x10--20%" || { echo "Smoke failed: goto offset did not land on 0x3"; exit 1; }
 	@cp /tmp/haxedit-smoke.bin /tmp/haxedit-sel-inclusive.bin
-	@bash -lc '{ printf "v"; sleep 0.1; printf "\006"; sleep 0.1; printf "\004"; sleep 0.1; printf ">"; sleep 0.1; printf "\031"; sleep 0.1; printf "\030"; } | script -q -c "./$(BINARY) /tmp/haxedit-sel-inclusive.bin" /tmp/haxedit-sel-inclusive.log' >/dev/null
+	@bash -lc '{ printf "v"; sleep 0.1; printf "\006"; sleep 0.1; printf "\004"; sleep 0.1; printf "<"; sleep 0.1; printf "\031"; sleep 0.1; printf "\030"; } | script -q -c "./$(BINARY) /tmp/haxedit-sel-inclusive.bin" /tmp/haxedit-sel-inclusive.log' >/dev/null
 	@stat -c%s /tmp/haxedit-sel-inclusive.bin | rg -q -- "^18$$" || { echo "Smoke failed: selection copy was not endpoint-inclusive (size mismatch)"; exit 1; }
-	@xxd -p /tmp/haxedit-sel-inclusive.bin | tr -d '\n' | rg -q -- "0011$$" || { echo "Smoke failed: selection did not include both endpoints"; exit 1; }
+	@xxd -p /tmp/haxedit-sel-inclusive.bin | tr -d '\n' | rg -q -- "^0011" || { echo "Smoke failed: selection did not include both endpoints"; exit 1; }
 	@bash -lc '{ printf "/"; sleep 0.1; printf "33\r"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-smoke.bin" /tmp/haxedit-search-fwd.log' >/dev/null
 	@strings /tmp/haxedit-search-fwd.log | rg -q -- "--0x3/0x10--20%" || { echo "Smoke failed: forward search did not land on expected offset"; exit 1; }
 	@bash -lc '{ printf ">"; sleep 0.1; printf "\022"; sleep 0.1; printf "11\r"; sleep 0.2; printf "\003"; } | script -q -c "./$(BINARY) /tmp/haxedit-smoke.bin" /tmp/haxedit-search-rev.log' >/dev/null
