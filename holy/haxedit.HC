@@ -166,6 +166,8 @@ U0 JumpToLineEnd(I64 bpl);
 U0 RecenterOnCursor(I64 bpl);
 U0 HandleMouseKey();
 I64 ViewBpl();
+I64 CursorMaxPos();
+U0 ClampCursor();
 U0 ScrollViewportLines(I64 lines);
 U8 *ColorSeqForByte(U8 b);
 U8 *BaseName(U8 *path);
@@ -259,7 +261,7 @@ U0 UndoOnce()
       memmove(g->buf + e->pos, g->buf + e->pos + e->new_len, g->len - (e->pos + e->new_len));
       g->len -= e->new_len;
       g->cur = e->pos;
-      if (g->cur > g->len) g->cur = g->len;
+      ClampCursor();
       g->dirty = TRUE;
     }
   }
@@ -322,6 +324,21 @@ I64 ViewBpl()
   return g->bpl;
 }
 
+I64 CursorMaxPos()
+{
+  Editor *g = _G();
+  if (g->len <= 0) return 0;
+  return g->len - 1;
+}
+
+U0 ClampCursor()
+{
+  Editor *g = _G();
+  I64 max = CursorMaxPos();
+  if (g->cur < 0) g->cur = 0;
+  if (g->cur > max) g->cur = max;
+}
+
 U0 Die(U8 *msg)
 {
   write(1,"\x1b[0m\x1b[2J\x1b[H\x1b[?25h",18);
@@ -334,12 +351,14 @@ U0 Die(U8 *msg)
 U0 EnterRaw()
 {
   if (isatty(0)) system("stty raw -echo 2>/dev/null");
-  WriteStr("\x1b[?1000h\x1b[?1002h\x1b[?1006h");
+  /* Enable mouse and Kitty keyboard protocol (request all events including CSI u) */
+  WriteStr("\x1b[?1000h\x1b[?1002h\x1b[?1006h\x1b[>1u");
 }
 
 U0 LeaveRaw()
 {
-  WriteStr("\x1b[?1000l\x1b[?1002l\x1b[?1006l");
+  /* Disable mouse and pop Kitty keyboard protocol flags */
+  WriteStr("\x1b[?1000l\x1b[?1002l\x1b[?1006l\x1b[<u");
   if (isatty(0)) system("stty sane 2>/dev/null");
 }
 
@@ -682,7 +701,7 @@ U0 GotoOffsetPrompt()
     return;
   }
   if (off < 0) off = 0;
-  if (off > g->len) off = g->len;
+  if (off > CursorMaxPos()) off = CursorMaxPos();
 
   g->cur = off;
   g->hex_half = 0;
@@ -708,13 +727,15 @@ U0 GotoSectorPrompt()
     SetStatus("goto: invalid sector");
     return;
   }
-  if (sec > g->len / SECTOR_SIZE) {
+  I64 max_sec = 0;
+  if (g->len > 0) max_sec = CursorMaxPos() / SECTOR_SIZE;
+  if (sec > max_sec) {
     SetStatus("goto: invalid sector");
     return;
   }
 
   off = sec * SECTOR_SIZE;
-  if (off > g->len) off = g->len;
+  if (off > CursorMaxPos()) off = CursorMaxPos();
   g->cur = off;
   g->hex_half = 0;
   KeepVisible();
@@ -964,7 +985,7 @@ U0 TruncateFilePrompt()
   if (off > g->len) off = g->len;
 
   g->len = off;
-  if (g->cur > g->len) g->cur = g->len;
+  ClampCursor();
   g->hex_half = 0;
   if (g->mark_on && (g->mark_pos >= g->len || g->cur >= g->len)) {
     g->mark_on = FALSE;
@@ -1133,8 +1154,9 @@ U0 MoveCursor(I64 delta)
 {
   Editor *g = _G();
   I64 dst = g->cur + delta;
+  I64 max = CursorMaxPos();
   if (dst < 0) dst = 0;
-  if (dst > g->len) dst = g->len;
+  if (dst > max) dst = max;
   g->cur = dst;
   g->hex_half = 0;
 }
@@ -1142,6 +1164,7 @@ U0 MoveCursor(I64 delta)
 U0 KeepVisible()
 {
   Editor *g = _G();
+  ClampCursor();
   I64 bpl = ViewBpl();
   I64 vrows = 1;
   if (g->rows > 2) vrows = g->rows - 2;
@@ -1166,7 +1189,7 @@ U0 JumpToAbsolute(I64 pos)
 {
   Editor *g = _G();
   if (pos < 0) pos = 0;
-  if (pos > g->len) pos = g->len;
+  if (pos > CursorMaxPos()) pos = CursorMaxPos();
   g->cur = pos;
   g->hex_half = 0;
   KeepVisible();
@@ -1184,7 +1207,7 @@ U0 JumpToLineEnd(I64 bpl)
 {
   Editor *g = _G();
   I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
-  if (line_end > g->len) line_end = g->len;
+  if (line_end > CursorMaxPos()) line_end = CursorMaxPos();
   g->cur = line_end;
   g->hex_half = 0;
   KeepVisible();
@@ -1220,7 +1243,8 @@ U0 HandleMouseKey()
   idx = -1;
   pane = g->pane;
 
-  if (row < 0 || row >= g->rows - 1) return;
+  /* Row 0 is the panel header; data rows start at 1 and end before status. */
+  if (row <= 0 || row >= g->rows - 1) return;
 
   if (col >= hex_start && col < hex_start + 3 * bpl) {
     idx = (col - hex_start) / 3;
@@ -1240,11 +1264,15 @@ U0 HandleMouseKey()
     return;
   }
 
-  line_idx = row;
+  line_idx = row - 1;
   off = g->top + line_idx * bpl;
   loc = off + idx;
-  if (loc < 0) loc = 0;
-  if (loc > g->len) loc = g->len;
+  if (g->len <= 0) {
+    loc = 0;
+  } else {
+    if (loc < 0) loc = 0;
+    if (loc >= g->len) loc = g->len - 1;
+  }
 
   g->pane = pane;
   g->cur = loc;
@@ -1530,16 +1558,30 @@ I64 ReadKey()
         }
         if (ch == 'u') {
           I64 code_u = params[0];
-          if (pcount >= 2) {
-            I64 mod_u = params[1];
-            if (mod_u == 6 && (code_u == 67 || code_u == 99)) return K_CTRL_SHIFT_C;
-            if (mod_u == 7 && IsCtrlAltHCode(code_u)) return K_ALT_BASE + 8; /* Ctrl+Alt+H */
-            if (mod_u == 5) {
-              if (code_u >= 'a' && code_u <= 'z') return code_u - 'a' + 1;
-              if (code_u >= 'A' && code_u <= 'Z') return code_u - 'A' + 1;
-              if (code_u == ' ') return 0;
-            }
+          I64 mod_u = 1;
+          if (pcount >= 2) mod_u = params[1];
+
+          if (mod_u == 6 && (code_u == 67 || code_u == 99)) return K_CTRL_SHIFT_C;
+          if (mod_u == 7 && IsCtrlAltHCode(code_u)) return K_ALT_BASE + 8; /* Ctrl+Alt+H */
+          if (mod_u == 5) {
+            if (code_u >= 'a' && code_u <= 'z') return code_u - 'a' + 1;
+            if (code_u >= 'A' && code_u <= 'Z') return code_u - 'A' + 1;
+            if (code_u == ' ') return 0;
           }
+
+          /* Kitty keyboard protocol special keys */
+          if (code_u == 57417) { if (mod_u == 3) return K_ALT_ARROW_UP; return K_ARROW_UP; }
+          if (code_u == 57418) { if (mod_u == 3) return K_ALT_ARROW_DOWN; return K_ARROW_DOWN; }
+          if (code_u == 57419) { if (mod_u == 3) return K_ALT_ARROW_RIGHT; return K_ARROW_RIGHT; }
+          if (code_u == 57420) { if (mod_u == 3) return K_ALT_ARROW_LEFT; return K_ARROW_LEFT; }
+          if (code_u == 57421) return K_HOME;
+          if (code_u == 57422) return K_END;
+          if (code_u == 57423) return K_PAGE_UP;
+          if (code_u == 57424) return K_PAGE_DOWN;
+          if (code_u == 57425) return K_INSERT;
+          if (code_u == 57426) return K_DELETE;
+          if (code_u >= 57344 && code_u <= 57355) return K_F1 + (code_u - 57344);
+
           if (code_u < 256) return code_u;
           return K_ESC;
         }
@@ -2133,7 +2175,7 @@ U0 ProcessKey(I64 k, Bool *running)
   }
   else if (k == K_END) {
     I64 line_end = (g->cur / bpl) * bpl + (bpl - 1);
-    if (line_end > g->len) line_end = g->len;
+    if (line_end > CursorMaxPos()) line_end = CursorMaxPos();
     g->cur = line_end;
     g->hex_half = 0;
   }
