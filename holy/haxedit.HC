@@ -50,6 +50,7 @@
 #define LAYOUT_LEFT_PAD 1
 #define LAYOUT_RIGHT_PAD 1
 #define LAYOUT_PANE_GAP 2
+#define FILE_SIZE_SOFT_MAX (512 * 1024 * 1024)
 
 #define UNDO_OP_OVERWRITE 1
 #define UNDO_OP_INSERT    2
@@ -405,10 +406,15 @@ Bool IsHexChar(I64 c)
 U0 EnsureCap(I64 need)
 {
   Editor *g = _G();
+  if (need < 0) Die("capacity overflow");
+  if (need > FILE_SIZE_SOFT_MAX) Die("file too large");
   if (need <= g->cap) return;
   I64 ncap = 1024;
   if (g->cap) ncap = g->cap;
-  while (ncap < need) ncap *= 2;
+  while (ncap < need) {
+    if (ncap > (0x7FFFFFFFFFFFFFFF / 2)) Die("capacity overflow");
+    ncap *= 2;
+  }
   U8 *tmp = realloc(g->buf, ncap)(U8*);
   if (!tmp) Die("out of memory");
   g->buf = tmp;
@@ -478,10 +484,15 @@ I64 HexVal(I64 c)
 U0 EnsureClipCap(I64 need)
 {
   Editor *g = _G();
+  if (need < 0) Die("clipboard capacity overflow");
+  if (need > FILE_SIZE_SOFT_MAX) Die("clipboard too large");
   if (need <= g->clip_cap) return;
   I64 cap = 256;
   if (g->clip_cap) cap = g->clip_cap;
-  while (cap < need) cap *= 2;
+  while (cap < need) {
+    if (cap > (0x7FFFFFFFFFFFFFFF / 2)) Die("clipboard capacity overflow");
+    cap *= 2;
+  }
   U8 *tmp = realloc(g->clip, cap)(U8*);
   if (!tmp) Die("out of memory");
   g->clip = tmp;
@@ -1439,6 +1450,10 @@ U0 OpenFile(U8 *path)
   if (len < 0) {
     close(fd);
     Die("lseek failed");
+  }
+  if (len > FILE_SIZE_SOFT_MAX) {
+    close(fd);
+    Die("file too large");
   }
   lseek(fd, 0, SEEK_SET);
 
