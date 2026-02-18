@@ -160,6 +160,7 @@ U0 SaveFile();
 U0 InsertBytes(I64 pos, U8 *data, I64 n, Bool track_undo);
 U0 SetByteAt(I64 idx, U8 b, Bool track_undo);
 U0 MoveCursorAndKeepVisible(I64 delta);
+U0 MoveCursorRowsAndKeepVisible(I64 rows);
 U0 JumpToAbsolute(I64 pos);
 U0 JumpToLineStart(I64 bpl);
 U0 JumpToLineEnd(I64 bpl);
@@ -1185,6 +1186,33 @@ U0 MoveCursorAndKeepVisible(I64 delta)
   KeepVisible();
 }
 
+U0 MoveCursorRowsAndKeepVisible(I64 rows)
+{
+  Editor *g = _G();
+  I64 bpl = ViewBpl();
+  I64 max = CursorMaxPos();
+  I64 cur_row, cur_col, max_row, dst_row, row_start, row_end, dst;
+
+  if (bpl <= 0) return;
+  cur_row = g->cur / bpl;
+  cur_col = g->cur % bpl;
+  max_row = max / bpl;
+
+  dst_row = cur_row + rows;
+  if (dst_row < 0) dst_row = 0;
+  if (dst_row > max_row) dst_row = max_row;
+
+  row_start = dst_row * bpl;
+  row_end = row_start + (bpl - 1);
+  if (row_end > max) row_end = max;
+
+  dst = row_start + cur_col;
+  if (dst > row_end) dst = row_end;
+  g->cur = dst;
+  g->hex_half = 0;
+  KeepVisible();
+}
+
 U0 JumpToAbsolute(I64 pos)
 {
   Editor *g = _G();
@@ -2149,24 +2177,32 @@ U0 ProcessKey(I64 k, Bool *running)
 
   if (k == 6) { MoveCursorAndKeepVisible(1); return; }      /* Ctrl+F */
   if (k == 2) { MoveCursorAndKeepVisible(-1); return; }     /* Ctrl+B */
-  if (k == 14) { MoveCursorAndKeepVisible(bpl); return; }   /* Ctrl+N */
-  if (k == 16) { MoveCursorAndKeepVisible(-bpl); return; }  /* Ctrl+P */
+  if (k == 14) { MoveCursorRowsAndKeepVisible(1); return; }   /* Ctrl+N */
+  if (k == 16) { MoveCursorRowsAndKeepVisible(-1); return; }  /* Ctrl+P */
   if (k == K_ALT_ARROW_RIGHT) { MoveCursorAndKeepVisible(bloc); return; }
   if (k == K_ALT_ARROW_LEFT) { MoveCursorAndKeepVisible(-bloc); return; }
-  if (k == K_ALT_ARROW_DOWN) { MoveCursorAndKeepVisible(bloc * bpl); return; }
-  if (k == K_ALT_ARROW_UP) { MoveCursorAndKeepVisible(-bloc * bpl); return; }
+  if (k == K_ALT_ARROW_DOWN) { MoveCursorRowsAndKeepVisible(bloc); return; }
+  if (k == K_ALT_ARROW_UP) { MoveCursorRowsAndKeepVisible(-bloc); return; }
   if (k == K_ALT_BASE + 'f' || k == K_ALT_BASE + 'F') { MoveCursorAndKeepVisible(bloc); return; }
   if (k == K_ALT_BASE + 'b' || k == K_ALT_BASE + 'B') { MoveCursorAndKeepVisible(-bloc); return; }
-  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursorAndKeepVisible(bloc * bpl); return; }
-  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursorAndKeepVisible(-bloc * bpl); return; }
+  if (k == K_ALT_BASE + 'n' || k == K_ALT_BASE + 'N') { MoveCursorRowsAndKeepVisible(bloc); return; }
+  if (k == K_ALT_BASE + 'p' || k == K_ALT_BASE + 'P') { MoveCursorRowsAndKeepVisible(-bloc); return; }
   if (k == 1) { JumpToLineStart(bpl); return; }  /* Ctrl+A */
   if (k == 5) { JumpToLineEnd(bpl); return; }    /* Ctrl+E */
   if (k == 22) { MoveCursorAndKeepVisible(page); return; }  /* Ctrl+V */
 
   if (k == K_ARROW_LEFT || (k == 'h' && g->pane == PANE_HEX)) MoveCursor(-1);
   else if (k == K_ARROW_RIGHT || (k == 'l' && g->pane == PANE_HEX)) MoveCursor(1);
-  else if (k == K_ARROW_UP || (k == 'k' && g->pane == PANE_HEX)) MoveCursor(-bpl);
-  else if (k == K_ARROW_DOWN || (k == 'j' && g->pane == PANE_HEX)) MoveCursor(bpl);
+  else if (k == K_ARROW_UP || (k == 'k' && g->pane == PANE_HEX)) {
+    MoveCursorRowsAndKeepVisible(-1);
+    g->quit_confirm = FALSE;
+    return;
+  }
+  else if (k == K_ARROW_DOWN || (k == 'j' && g->pane == PANE_HEX)) {
+    MoveCursorRowsAndKeepVisible(1);
+    g->quit_confirm = FALSE;
+    return;
+  }
   else if (k == K_PAGE_UP) MoveCursor(-page);
   else if (k == K_PAGE_DOWN) MoveCursor(page);
   else if (k == K_HOME) {
