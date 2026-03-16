@@ -1518,6 +1518,7 @@ I64 ReadKey()
   while (TRUE) {
     n = read(0, &c, 1);
     if (n == 1) break;
+    if (n <= 0) return -1;
   }
 
   if (c != 27) return c;
@@ -2408,7 +2409,11 @@ I32 Main(I32 argc, U8 **argv)
     }
     DrawScreen();
     I64 k = ReadKey();
-    ProcessKey(k, &running);
+    if (k == -1) {
+      running = FALSE;
+    } else {
+      ProcessKey(k, &running);
+    }
   }
 
   LeaveRaw();

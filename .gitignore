@@ -1,2 +1,5 @@
 .build/
 haxedit
+haxedit.out
+haxedit.strace
+test.bin
